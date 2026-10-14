@@ -61,8 +61,37 @@ export async function render(el, ctx, args, alive) {
     <section class="card">
       <h2 class="h2">Как это работает</h2>
       <ul class="list">${howItWorks(r)}</ul>
+      ${!isAdmin && ctx.settings?.show_rules ? html`<a class="ghost link" href="#/rules">Все числа правил →</a>` : ''}
     </section>
+
+    ${isAdmin ? html`<section class="card">
+      <h2 class="h2">Начислить или снять очки</h2>
+      ${w.theory ? html`<p class="label">Теоретически за калибровку: <b class="em">${POINTS(w.theory)}</b> по текущим числам правил.
+        Это видишь только ты — можешь начислить их или часть вручную.</p>` : ''}
+      <div class="grid-2">
+        <div class="field"><label class="label" for="grant-amount">Очки (минус — снять)</label>
+          <input class="input" id="grant-amount" type="number" inputmode="numeric" step="1" placeholder="например 50"></div>
+        <div class="field"><label class="label" for="grant-note">Причина</label>
+          <input class="input" id="grant-note" type="text" maxlength="200" placeholder="за что"></div>
+      </div>
+      <p class="error" id="grant-error" role="alert"></p>
+      <button type="button" class="btn" id="grant">Записать</button>
+      <p class="label">Плюс идёт в баланс и рейтинг, минус — только из баланса, ниже нуля не уходит.</p>
+    </section>` : ''}
   `);
+
+  el.querySelector('#grant')?.addEventListener('click', async () => {
+    const amount = Number(el.querySelector('#grant-amount').value);
+    const note = el.querySelector('#grant-note').value.trim();
+    const err = el.querySelector('#grant-error');
+    if (!Number.isInteger(amount) || amount === 0) { err.textContent = 'Впиши целое число, не ноль'; return; }
+    if (!note) { err.textContent = 'Напиши причину'; return; }
+    try {
+      await api.grantPoints(athleteId, amount, note);
+      ctx.toast(`${signed(amount)} записано`);
+      ctx.refresh();
+    } catch (e) { err.textContent = e.message; }
+  });
 }
 
 // Подходы одного дня — одной строкой, подробности под «Подробнее».
@@ -111,20 +140,14 @@ function howItWorks(r) {
   const items = [];
   items.push(cal
     ? 'Сейчас калибровка: очки не начисляются. Числа правил Тимур поставит после неё.'
-    : `Очки — только за подходы, которые подтвердил Тимур: ${n(r.points_per_rep) ?? 0} за повтор`
-      + ` и ${n(r.points_per_set) ?? 0} за подход, где цель выполнена.`);
-  items.push('Серия — тренировочные дни подряд с отметками. Выходные, купленные дни и больничный её не рвут.'
+    : 'Очки — только за подходы, которые подтвердил Тимур: за каждый повтор, за подход, где цель выполнена, и за повторы сверх цели. Числа у каждого упражнения свои.');
+  items.push('Серия — тренировочные дни подряд, где сделан весь план. Выходные, купленные дни и больничный её не продлевают и не рвут.'
     + (!cal && r.streak_from && r.streak_step
-      ? ` С ${r.streak_from}-го дня серии очки умножаются: +${n(r.streak_step)} в день, максимум ×${n(r.streak_max) ?? '∞'}.` : ''));
-  if (!cal && n(r.bonus_over) > 0) {
-    items.push(`Повторы сверх цели: +${n(r.bonus_over)} за каждый${r.bonus_cap_day != null ? `, не больше ${r.bonus_cap_day} в день` : ''}.`);
-  }
-  if (!cal && r.bonus_growth > 0) {
-    items.push(`Рост: если лучший подход недели больше, чем на прошлой, +${r.bonus_growth} за каждое такое упражнение.`);
-  }
-  items.push(!cal && r.miss_penalty > 0
-    ? `Пропуск без выходного — минус ${POINTS(r.miss_penalty)}. Ниже нуля баланс не падает.`
-    : 'Пропуск без выходного — минус очки. Ниже нуля баланс не падает.');
-  items.push('Рейтинг — всё, что заработано. Он никогда не уменьшается: покупки и штрафы трогают только баланс.');
+      ? ` С ${r.streak_from}-го дня серии все очки за подход умножаются: +${n(r.streak_step)} в день, максимум ×${n(r.streak_max) ?? '∞'}.` : ''));
+  items.push('Рост: если лучший подход недели в упражнении больше, чем на прошлой неделе, — бонус.');
+  items.push(!cal && n(r.miss_penalty_pct) > 0
+    ? `Пропуск — не сделан хоть один подход плана. Штраф: ${n(r.miss_penalty_pct)}% от баланса.`
+    : 'Пропуск — не сделан хоть один подход плана. За него штраф: процент от баланса.');
+  items.push('Рейтинг — всё, что заработано. Покупки и штрафы трогают только баланс.');
   return items.map((t) => html`<li>${t}</li>`);
 }

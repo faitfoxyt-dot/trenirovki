@@ -74,8 +74,8 @@ export const api = {
       name: ex.name, sets: ex.sets, target_reps: ex.target_reps,
       position: ex.position, active: ex.active,
     };
-    if (ex.id) check(await sb.from('exercises').update(row).eq('id', ex.id));
-    else check(await sb.from('exercises').insert(row));
+    if (ex.id) return check(await sb.from('exercises').update(row).eq('id', ex.id).select().single());
+    return check(await sb.from('exercises').insert(row).select().single());
   },
 
   async openDay(date, athleteId) {
@@ -186,5 +186,28 @@ export const api = {
 
   async setIdeaStatus(id, status) {
     return check(await sb.rpc('set_idea_status', { p_id: id, p_status: status }));
+  },
+
+  // ── v3.1 ──
+
+  async theory(athleteId, from, to) {
+    return check(await sb.from('theory_points').select('*')
+      .eq('athlete_id', athleteId).gte('date', from).lte('date', to));
+  },
+
+  async setDayPlan(athleteId, date, plan, note) {
+    return check(await sb.rpc('set_day_plan', { p_athlete: athleteId, p_date: date, p_plan: plan, p_note: note ?? null }));
+  },
+
+  async grantPoints(athleteId, amount, note) {
+    return check(await sb.rpc('grant_points', { p_athlete: athleteId, p_amount: amount, p_note: note }));
+  },
+
+  async deleteIdea(id) {
+    return check(await sb.rpc('delete_idea', { p_id: id }));
+  },
+
+  async resetAthlete(athleteId) {
+    return check(await sb.rpc('reset_athlete', { p_athlete: athleteId }));
   },
 };

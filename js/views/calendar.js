@@ -1,7 +1,7 @@
 // «Календарь»: месяц, цвет дня по статусу, тап — подробности дня.
 
 import { html, monthKey, shiftMonth, monthTitle, monthDays, isoDow, dayTitle, WD_SHORT } from '../util.js';
-import { DAY_STATE, DAY_STATUS, MUSCLES, REVIEW, effectiveStatus, dayState, setPoints, signed } from '../logic.js';
+import { DAY_STATE, DAY_STATUS, MUSCLES, REVIEW, effectiveStatus, dayState, dayCounts, setPoints, signed } from '../logic.js';
 
 const LEGEND = ['confirmed', 'pending', 'missed', 'sick', 'rest', 'bought', 'busy', 'planned'];
 
@@ -19,12 +19,14 @@ export async function render(el, ctx, args, alive) {
 
   const first = dates[0];
   const last = dates[dates.length - 1];
-  const [template, days, logs, mornings, exercises] = await Promise.all([
+  const isAdmin = me.role === 'admin';
+  const [template, days, logs, mornings, exercises, theory] = await Promise.all([
     api.weekTemplate(),
     api.days(athleteId, first, last),
     api.logs(athleteId, first, last),
     api.mornings(athleteId, first, last),
     api.exercises(),
+    isAdmin ? api.theory(athleteId, first, last) : [],
   ]);
   if (!alive()) return;
 
@@ -32,8 +34,11 @@ export async function render(el, ctx, args, alive) {
     const row = days.find((d) => d.date === date) ?? null;
     const status = effectiveStatus(date, row, template);
     const dayLogs = logs.filter((l) => l.date === date);
-    const state = dayState({ date, today: clock.today, startDate: settings.start_date, status, logs: dayLogs });
-    return [date, { date, row, status, state, logs: dayLogs, morning: mornings.find((m) => m.date === date) }];
+    const plan = row?.plan ?? null;
+    const state = dayState({ date, today: clock.today, startDate: settings.start_date, status, logs: dayLogs, plan });
+    const th = theory.filter((t) => t.date === date);
+    return [date, { date, row, status, state, logs: dayLogs, morning: mornings.find((m) => m.date === date),
+      theory: new Map(th.map((t) => [t.set_id, t.points])), counts: plan ? dayCounts(plan, dayLogs) : null }];
   }));
 
   el.innerHTML = String(html`
@@ -72,7 +77,7 @@ export async function render(el, ctx, args, alive) {
 
   const detail = el.querySelector('#detail');
   const showDetail = () => {
-    detail.innerHTML = String(detailHtml(info[sel], clock, exercises));
+    detail.innerHTML = String(detailHtml(info[sel], clock, exercises, isAdmin));
   };
   showDetail();
 
@@ -95,24 +100,32 @@ function cellClass(d, today, sel) {
     .filter(Boolean).join(' ');
 }
 
-function detailHtml(d, clock, exercises) {
+function detailHtml(d, clock, exercises, showTheory) {
   const plan = d.row?.plan ?? [];
   const name = (id) => (plan.find((e) => e.id === id) ?? exercises.find((e) => e.id === id))?.name ?? 'Упражнение';
   const isPast = d.date <= clock.today;
   const sorted = d.logs.slice().sort((a, b) => a.exercise_id - b.exercise_id || a.set_no - b.set_no);
+  const theoryDay = [...d.theory.values()].reduce((a, b) => a + b, 0);
+  const pts = (l) => {
+    if (setPoints(l) !== null) return ` · ${signed(setPoints(l))}`;
+    return showTheory && d.theory.has(l.id) ? ` · в теории ${signed(d.theory.get(l.id))}` : '';
+  };
 
   return html`
     <div class="row"><h2 class="h2">${dayTitle(d.date)}</h2><span class="chip day-chip-${d.state}">${DAY_STATE[d.state]}</span></div>
     ${!isPast ? html`<p class="label">${d.status ? `План: ${DAY_STATUS[d.status].toLowerCase()}.` : 'План на этот день ещё не задан.'}
       Статус дня задаёт Тимур в шаблоне недели или отдельно для дня.</p>` : ''}
     ${isPast && d.state === 'before' ? html`<p class="label">До старта калибровки.</p>` : ''}
-    ${isPast && d.state === 'missed' ? html`<p class="label">Тренировочный день без отметок.</p>` : ''}
-    ${d.morning ? html`<p class="label">Утро: мышцы — ${MUSCLES.find((m) => m.key === d.morning.muscles)?.label.toLowerCase() ?? '—'},
+    ${isPast && d.state === 'missed' ? html`<p class="label">${d.counts && d.counts.done
+      ? `Пропуск: сделано ${d.counts.done} из ${d.counts.total} подходов плана.` : 'Тренировочный день без отметок.'}</p>` : ''}
+    ${d.row?.note && d.status === 'training' ? html`<p class="label">Задание от Тимура: «${d.row.note}»</p>` : ''}
+    ${showTheory && theoryDay ? html`<p class="label">Теоретически за день: <b class="em">${signed(theoryDay)}</b> · видишь только ты</p>` : ''}
+    ${d.morning ? html`<p class="label">Утро: ${MUSCLES.find((m) => m.key === d.morning.muscles)?.label.toLowerCase() ?? '—'},
       энергия — ${d.morning.energy ?? '—'}${d.morning.note ? html`. «${d.morning.note}»` : ''}</p>` : ''}
     ${sorted.length ? html`<ul class="log-list">
       ${sorted.map((l) => html`<li>
         <div class="row"><span>${name(l.exercise_id)} · подход ${l.set_no}</span>
-          <span class="review review-${l.review}">${REVIEW[l.review]}${setPoints(l) !== null ? ` · ${signed(setPoints(l))}` : ''}</span></div>
+          <span class="review review-${l.review}">${REVIEW[l.review]}${pts(l)}</span></div>
         <p class="label">Заявлено: ${l.claimed ?? '—'}${l.review !== 'pending' ? ` · подтверждено: ${l.confirmed}` : ''}
           · видео ${l.has_video ? 'есть' : 'нет'}</p>
         ${l.comment ? html`<p class="label comment">Тимур: ${l.comment}</p>` : ''}

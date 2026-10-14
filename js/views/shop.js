@@ -43,7 +43,7 @@ export async function render(el, ctx, args, alive) {
 
     <section class="card">
       <div class="row"><h2 class="h2">Выходной</h2><span class="chip">${price !== null ? POINTS(price) : 'цена после калибровки'}</span></div>
-      <p class="label">Отдых вместо тренировки. Серию не рвёт, но тратит баланс — телефон отодвигается.</p>
+      <p class="label">Отдых вместо тренировки. Серию не рвёт и не продлевает, но тратит баланс — телефон отодвигается.</p>
       ${isAdmin ? '' : html`
         <label class="label" for="buy-day">На какой день</label>
         <select id="buy-day" class="input" ${options.length ? '' : html`disabled`}>
@@ -84,6 +84,7 @@ export async function render(el, ctx, args, alive) {
           ? html`<span class="row-gap"><button type="button" class="ghost" data-idea="${i.id}" data-status="accepted">Принять</button>
               <button type="button" class="ghost" data-idea="${i.id}" data-status="declined">Отклонить</button></span>`
           : html`<span class="chip ${i.status === 'accepted' ? 'chip-on' : ''}">${IDEA[i.status]}</span>`}
+        ${isAdmin ? html`<button type="button" class="ghost icon" data-del-idea="${i.id}" aria-label="Удалить идею">✕</button>` : ''}
       </div>`) : html`<p class="label">Идей пока нет.</p>`}
     </section>
   `);
@@ -125,6 +126,14 @@ export async function render(el, ctx, args, alive) {
       ctx.refresh();
     } catch (e) { err.textContent = e.message; }
   });
+
+  el.querySelectorAll('[data-del-idea]').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm('Удалить идею?')) return;
+    try {
+      await api.deleteIdea(Number(b.dataset.delIdea));
+      ctx.refresh();
+    } catch (e) { ctx.toast(e.message); }
+  }));
 
   el.querySelectorAll('[data-idea]').forEach((b) => b.addEventListener('click', async () => {
     try {

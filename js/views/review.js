@@ -38,6 +38,15 @@ export async function render(el, ctx, args, alive) {
   const morning = mornings[0];
   const newIdeas = ideas.filter((i) => i.status === 'new').length;
 
+  // Подходы одного дня одного атлета — вместе, с кнопкой «Принять всё за день».
+  const groups = [];
+  pending.forEach((l) => {
+    const key = `${l.athlete_id}|${l.date}`;
+    let g = groups.find((x) => x.key === key);
+    if (!g) groups.push(g = { key, date: l.date, athlete: l.athlete_id, logs: [] });
+    g.logs.push(l);
+  });
+
   el.innerHTML = String(html`
     <header class="stack-8">
       <p class="sub">Подходы, которые ждут твоего решения</p>
@@ -55,20 +64,23 @@ export async function render(el, ctx, args, alive) {
       </div>
     </section>`)}
     ${newIdeas ? html`<a class="notice" href="#/shop">Новые идеи для магазина: ${newIdeas} →</a>` : ''}
-    ${pending.length ? pending.map((l) => html`<section class="card review-card" data-id="${l.id}">
-      <div class="row"><span class="chip">${dayTitle(l.date)}</span>${many ? html`<span class="label">${athleteName(l.athlete_id)}</span>` : ''}</div>
+    ${pending.length ? groups.map((g) => html`<div class="row day-head">
+      <h2 class="h2">${dayTitle(g.date)}${many ? html` · <span class="label">${athleteName(g.athlete)}</span>` : ''}</h2>
+      ${g.logs.length > 1 ? html`<button type="button" class="ghost" data-accept-day="${g.key}">Принять всё за день</button>` : ''}
+    </div>
+    ${g.logs.map((l) => html`<section class="card review-card" data-id="${l.id}" data-group="${g.key}">
       <h2 class="h2">${exName(l.exercise_id)} · подход ${l.set_no}</h2>
       <p class="label">Заявлено: <b class="em">${l.claimed}</b> · видео ${l.has_video ? 'есть' : html`<span class="bad">нет</span>`}<br>
         Подпись в Telegram: ${caption(l.date, exName(l.exercise_id), l.set_no)}</p>
       <div class="review-form">${formHtml(l)}</div>
-    </section>`) : html`<section class="card"><h2 class="h2">Всё проверено</h2>
+    </section>`)}`) : html`<section class="card"><h2 class="h2">Всё проверено</h2>
       <p class="label">Новые подходы появятся здесь, как только друг их отметит.</p></section>`}
     <section class="card">
       <h2 class="h2">Утро друга</h2>
       <p class="label">${morning
-        ? html`Мышцы: ${MUSCLES.find((m) => m.key === morning.muscles)?.label ?? '—'} · Энергия: ${morning.energy ?? '—'}${morning.note ? html`<br>«${morning.note}»` : ''}`
+        ? html`Самочувствие: ${MUSCLES.find((m) => m.key === morning.muscles)?.label ?? '—'} · Энергия: ${morning.energy ?? '—'}${morning.note ? html`<br>«${morning.note}»` : ''}`
         : 'Сегодня ещё не заполнил.'}</p>
-      ${morning?.muscles === 'pain' ? html`<p class="label bad">Отмечена боль. Если друг попросит больничный, запрос появится здесь.</p>` : ''}
+      ${morning?.muscles === 'pain' ? html`<p class="label bad">Друг отметил «плохо». Если друг попросит больничный, запрос появится здесь.</p>` : ''}
     </section>
   `);
 
@@ -84,13 +96,23 @@ export async function render(el, ctx, args, alive) {
   });
 
   let left = pending.length;
-  el.querySelectorAll('.review-card').forEach((card) => {
+  const cards = [...el.querySelectorAll('.review-card')].map((card) => {
     const log = pending.find((l) => l.id === Number(card.dataset.id));
-    wire(card, log, ctx, (delta) => {
+    return { group: card.dataset.group, ...wire(card, log, ctx, (delta) => {
       left += delta;
       el.querySelector('#pending-count').textContent = `Ждут проверки: ${left}`;
-    });
+    }) };
   });
+
+  el.querySelectorAll('[data-accept-day]').forEach((b) => b.addEventListener('click', async () => {
+    b.disabled = true;
+    const open = cards.filter((c) => c.group === b.dataset.acceptDay && !c.done());
+    try {
+      for (const c of open) await c.accept();
+      ctx.toast(`Принято подходов: ${open.length}`);
+    } catch (e) { ctx.toast(e.message); }
+    b.disabled = false;
+  }));
 }
 
 function formHtml(l, decision = null) {
@@ -112,6 +134,28 @@ function formHtml(l, decision = null) {
 function wire(card, log, ctx, onCount) {
   const box = card.querySelector('.review-form');
   let decision = null;
+  let done = false;
+
+  const submit = async (dec, confirmed, comment) => {
+    const saved = await ctx.api.reviewSet(log.id, dec, confirmed, comment);
+    done = true;
+    onCount(-1);
+    // На калибровке очки не начисляются, но админ видит, сколько было бы.
+    let theory = '';
+    if (saved.points === null && saved.review !== 'rejected') {
+      const t = (await ctx.api.theory(log.athlete_id, log.date, log.date)).find((x) => x.set_id === log.id);
+      if (t) theory = ` · в теории ${signed(t.points)}`;
+    }
+    box.innerHTML = String(html`<p class="saved ${saved.review}">${SAVED_TEXT[saved.review](saved)}${theory}${saved.comment ? html` · ${saved.comment}` : ''}</p>
+      <button type="button" class="ghost again">Изменить решение</button>`);
+    box.querySelector('.again').addEventListener('click', () => {
+      onCount(1);
+      done = false;
+      decision = null;
+      box.innerHTML = String(formHtml(log));
+      bind();
+    });
+  };
 
   const bind = () => {
     box.querySelectorAll('[data-decision]').forEach((b) => b.addEventListener('click', () => {
@@ -135,20 +179,12 @@ function wire(card, log, ctx, onCount) {
       }
       const comment = box.querySelector(`#cm-${log.id}`).value;
       try {
-        const saved = await ctx.api.reviewSet(log.id, decision, confirmed, comment);
-        onCount(-1);
-        box.innerHTML = String(html`<p class="saved ${saved.review}">${SAVED_TEXT[saved.review](saved)}${saved.comment ? html` · ${saved.comment}` : ''}</p>
-          <button type="button" class="ghost again">Изменить решение</button>`);
-        box.querySelector('.again').addEventListener('click', () => {
-          onCount(1);
-          decision = null;
-          box.innerHTML = String(formHtml(log));
-          bind();
-        });
+        await submit(decision, confirmed, comment);
       } catch (e) {
         err.textContent = e.message;
       }
     });
   };
   bind();
+  return { done: () => done, accept: () => submit('accepted', null, box.querySelector(`#cm-${log.id}`)?.value ?? '') };
 }

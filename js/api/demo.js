@@ -6,11 +6,11 @@ import { addDays, isoDow, tallinnNow, shortDate, WD_SHORT } from '../util.js';
 const ADMIN = { id: 'admin', role: 'admin', name: 'Тимур' };
 const ATHLETE = { id: 'athlete', role: 'athlete', name: 'Друг' };
 
-const RULE_KEYS = ['calibration', 'points_per_rep', 'points_per_set', 'streak_from', 'streak_step', 'streak_max',
-  'bonus_growth', 'bonus_over', 'bonus_cap_day', 'miss_penalty', 'rest_day_price', 'purchase_limit_week', 'phone_price'];
+const RULE_KEYS = ['calibration', 'per_exercise', 'streak_from', 'streak_step', 'streak_max',
+  'bonus_cap_day', 'miss_penalty_pct', 'rest_day_price', 'purchase_limit_week', 'phone_price'];
 
 const db = {
-  settings: { id: 1, start_date: null, grace_hours: 3 },
+  settings: { id: 1, start_date: null, grace_hours: 3, show_rules: false },
   rules: [{ valid_from: '2000-01-01', calibration: true }],
   template: [1, 2, 3, 4, 5, 6, 7].map((dow) => ({ dow, status: dow === 7 ? 'rest' : 'training' })),
   exercises: [
@@ -24,6 +24,7 @@ const db = {
   purchases: [],
   sick: [],
   ideas: [],
+  theory: [],
 };
 let current = ATHLETE;
 let seq = 1;
@@ -56,7 +57,7 @@ function ensureDay(a, date) {
   if (!d) {
     if (date > today()) return null;
     const t = db.template.find((x) => x.dow === isoDow(date));
-    d = { athlete_id: a, date, status: t ? t.status : null, plan: null };
+    d = { athlete_id: a, date, status: t ? t.status : null, plan: null, note: null };
     db.days.push(d);
   }
   if (d.status === 'training' && !d.plan && date <= today()) d.plan = currentPlan();
@@ -71,7 +72,7 @@ function dayStatusOf(a, date) {
 
 function putStatus(a, date, status) {
   let d = findDay(a, date);
-  if (!d) { d = { athlete_id: a, date, status, plan: null }; db.days.push(d); }
+  if (!d) { d = { athlete_id: a, date, status, plan: null, note: null }; db.days.push(d); }
   d.status = status;
   if (status === 'training' && !d.plan && date <= today()) d.plan = currentPlan();
   return d;
@@ -85,7 +86,14 @@ function rulesFor(date) {
 }
 
 const isCal = (r) => !r || r.calibration !== false;
-const hasLogs = (a, date) => db.logs.some((l) => l.athlete_id === a && l.date === date && l.claimed !== null);
+// [отмечено подходов из плана, всего подходов в плане] — как day_counts в базе.
+function dayCounts(a, date) {
+  const plan = findDay(a, date)?.plan ?? currentPlan();
+  const done = db.logs.filter((l) => l.athlete_id === a && l.date === date && l.claimed !== null
+    && plan.some((e) => e.id === l.exercise_id && l.set_no <= e.sets)).length;
+  return [done, plan.reduce((s, e) => s + e.sets, 0)];
+}
+const dayDone = (a, date) => { const c = dayCounts(a, date); return c[0] >= c[1]; };
 const balance = (a) => db.ledger.filter((x) => x.athlete_id === a).reduce((s, x) => s + x.amount, 0);
 const rating = (a) => db.ledger.filter((x) => x.athlete_id === a).reduce((s, x) => s + x.rating, 0);
 const hasKey = (a, key) => db.ledger.some((x) => x.athlete_id === a && x.key === key);
@@ -96,7 +104,7 @@ function streakAt(a, date) {
   let n = 0;
   for (let d = date, i = 0; d >= start && i < 400; d = addDays(d, -1), i += 1) {
     if (dayStatusOf(a, d) !== 'training') continue;
-    if (hasLogs(a, d)) n += 1;
+    if (dayDone(a, d)) n += 1;
     else if (d < today()) break;
   }
   return n;
@@ -113,31 +121,41 @@ function addLedger(row) {
 }
 
 function awardSet(l) {
-  const r = rulesFor(l.date);
-  const ok = (l.review === 'accepted' || l.review === 'corrected') && l.confirmed !== null && !isCal(r);
+  let r = rulesFor(l.date);
+  const cal = isCal(r);
+  // На калибровке теорию считаем по самым свежим числам, которые вписал Тимур.
+  if (cal) r = rulesFor(addDays(today(), 1));
+  let ok = (l.review === 'accepted' || l.review === 'corrected') && l.confirmed !== null;
+  const pe = r?.per_exercise?.[l.exercise_id] ?? {};
   const ex = findDay(l.athlete_id, l.date)?.plan?.find((e) => e.id === l.exercise_id);
   const target = ex?.target_reps ?? null;
   const name = ex?.name ?? db.exercises.find((e) => e.id === l.exercise_id)?.name ?? 'Подход';
-  let pts = 0;
+  let total = 0;
   let bon = 0;
   let mult = 1;
   if (ok) {
     const full = l.confirmed > 0 && (target === null || l.confirmed >= target);
-    const base = l.confirmed * (r.points_per_rep ?? 0) + (full ? r.points_per_set ?? 0 : 0);
-    mult = streakMult(r, streakAt(l.athlete_id, l.date));
-    pts = Math.round(base * mult);
-    if (target !== null && l.confirmed > target && (r.bonus_over ?? 0) > 0) {
-      bon = Math.round((l.confirmed - target) * r.bonus_over);
+    const base = l.confirmed * (pe.rep ?? 0) + (full ? pe.set ?? 0 : 0);
+    if (target !== null && l.confirmed > target && (pe.over ?? 0) > 0) {
+      bon = Math.round((l.confirmed - target) * pe.over);
       if (r.bonus_cap_day != null) {
-        const other = db.logs.filter((x) => x.athlete_id === l.athlete_id && x.date === l.date && x.id !== l.id)
+        const other = (cal ? db.theory : db.logs)
+          .filter((x) => x.athlete_id === l.athlete_id && x.date === l.date && (x.set_id ?? x.id) !== l.id)
           .reduce((s, x) => s + (x.bonus ?? 0), 0);
         bon = Math.max(0, Math.min(bon, r.bonus_cap_day - other));
       }
     }
+    mult = streakMult(r, streakAt(l.athlete_id, l.date));
+    total = Math.round((base + bon) * mult);
   }
-  const reviewed = l.points != null || l.bonus != null;
-  const delta = pts + bon - (l.points ?? 0) - (l.bonus ?? 0);
-  l.points = ok ? pts : null;
+
+  db.theory = db.theory.filter((x) => x.set_id !== l.id);
+  if (ok && cal) db.theory.push({ set_id: l.id, athlete_id: l.athlete_id, date: l.date, points: total, bonus: bon });
+
+  ok = ok && !cal;
+  const reviewed = l.points != null;
+  const delta = (ok ? total : 0) - (l.points ?? 0);
+  l.points = ok ? total : null;
   l.bonus = ok ? bon : null;
   if (!delta) return;
   let note = `${reviewed ? 'Пересмотр: ' : ''}${name} · подход ${l.set_no}`;
@@ -153,11 +171,14 @@ function settle(a) {
   const t = today();
   for (let d = start > addDays(t, -30) ? start : addDays(t, -30); d < t; d = addDays(d, 1)) {
     const r = rulesFor(d);
-    if (isCal(r) || !(r.miss_penalty > 0) || dayStatusOf(a, d) !== 'training' || hasLogs(a, d) || hasKey(a, `penalty:${d}`)) continue;
+    if (isCal(r) || !(r.miss_penalty_pct > 0) || dayStatusOf(a, d) !== 'training' || hasKey(a, `penalty:${d}`)) continue;
+    const c = dayCounts(a, d);
+    if (c[0] >= c[1]) continue;
     ensureDay(a, d);
-    const pen = Math.min(r.miss_penalty, balance(a));
+    const bal = balance(a);
+    const pen = Math.min(bal, Math.round((bal * r.miss_penalty_pct) / 100));
     addLedger({ athlete_id: a, date: d, kind: 'penalty', amount: -pen,
-      note: `Пропуск тренировки${pen < r.miss_penalty ? ' · баланс не уходит ниже нуля' : ''}`, key: `penalty:${d}` });
+      note: `Пропуск: сделано ${c[0]} из ${c[1]} подходов · −${r.miss_penalty_pct}% баланса`, key: `penalty:${d}` });
   }
 
   for (let i = 1; i <= 5; i += 1) {
@@ -165,7 +186,7 @@ function settle(a) {
     const end = addDays(wk, 6);
     if (end < start) continue;
     const r = rulesFor(end);
-    if (isCal(r) || !(r.bonus_growth > 0) || hasKey(a, `growth:${wk}`)) continue;
+    if (isCal(r) || hasKey(a, `growth:${wk}`)) continue;
     const prevStart = addDays(wk, -7);
     if (db.logs.some((l) => l.athlete_id === a && l.date >= prevStart && l.date <= end && l.review === 'pending' && l.claimed !== null)) continue;
     const best = (from, to) => {
@@ -176,10 +197,12 @@ function settle(a) {
     };
     const cur = best(wk, end);
     const prev = best(prevStart, addDays(wk, -1));
-    const cnt = [...cur].filter(([id, b]) => prev.has(id) && b > prev.get(id)).length;
-    if (cnt > 0) {
-      addLedger({ athlete_id: a, date: end, kind: 'bonus_growth', amount: cnt * r.bonus_growth, rating: cnt * r.bonus_growth,
-        note: `Рост за неделю: лучший подход вырос в ${cnt} упр.`, key: `growth:${wk}` });
+    const grew = db.exercises.filter((e) => cur.has(e.id) && prev.has(e.id) && cur.get(e.id) > prev.get(e.id)
+      && (r.per_exercise?.[e.id]?.growth ?? 0) > 0);
+    const sum = grew.reduce((s, e) => s + r.per_exercise[e.id].growth, 0);
+    if (sum > 0) {
+      addLedger({ athlete_id: a, date: end, kind: 'bonus_growth', amount: sum, rating: sum,
+        note: `Рост за неделю: ${grew.map((e) => e.name).join(', ')}`, key: `growth:${wk}` });
     }
   }
 
@@ -249,9 +272,10 @@ function setStatus(a, date, status) {
   const start = addDays(T, -20);
   const rulesFrom = addDays(start, 7);
   db.settings.start_date = start;
-  db.rules.push({ valid_from: rulesFrom, calibration: false, points_per_rep: 1, points_per_set: 5,
-    streak_from: 3, streak_step: 0.1, streak_max: 1.5, bonus_growth: 20, bonus_over: 1, bonus_cap_day: 5,
-    miss_penalty: 100, rest_day_price: 150, purchase_limit_week: 2, phone_price: 4000 });
+  db.rules.push({ valid_from: rulesFrom, calibration: false,
+    per_exercise: { 1: { rep: 2, set: 5, over: 2, growth: 30 }, 2: { rep: 0.5, set: 5, over: 0.5, growth: 15 } },
+    streak_from: 3, streak_step: 0.1, streak_max: 1.5, bonus_cap_day: 10,
+    miss_penalty_pct: 10, rest_day_price: 150, purchase_limit_week: 2, phone_price: 4000 });
 
   let j = 0; // номер тренировочного дня
   const log = (date, ex, n, claimed, video = true) => {
@@ -273,6 +297,7 @@ function setStatus(a, date, status) {
     j += 1;
     if (j === 4) { putStatus(a, d, 'busy'); continue; }
     if (j === 10) { ensureDay(a, d); continue; } // пропуск
+    const partial = j === 7; // сделал не всё — тоже пропуск
     if (j === 15) {
       db.sick.push({ id: seq++, athlete_id: a, date: d, note: 'Потянул плечо', status: 'approved', created_at: stamp(), decided_at: stamp() });
       setStatus(a, d, 'sick');
@@ -283,7 +308,7 @@ function setStatus(a, date, status) {
     const abs = [19 + Math.floor(j / 3), 18 + Math.floor(j / 3), 15 + Math.floor(j / 4)];
     const rows = [
       ...pull.map((r, i) => log(d, 1, i + 1, r)),
-      ...abs.map((r, i) => log(d, 2, i + 1, r, !(j === 12 && i === 2))),
+      ...abs.slice(0, partial ? 1 : 3).map((r, i) => log(d, 2, i + 1, r, !(j === 12 && i === 2))),
     ];
     if (k === 19) continue; // вчера: ждёт проверки
     rows.forEach((row) => {
@@ -299,8 +324,10 @@ function setStatus(a, date, status) {
     }
   }
   frozen = null;
+  // Теория для калибровочной недели — как пересчёт в save_rules.
+  db.logs.filter((l) => isCal(rulesFor(l.date))).forEach(awardSet);
   if (dayStatusOf(a, T) !== 'training') putStatus(a, T, 'training');
-  ensureDay(a, T);
+  ensureDay(a, T).note = 'Подтягивания — медленный негатив, 3 секунды вниз';
   db.mornings.push({ athlete_id: a, date: addDays(T, -1), muscles: 'sore', energy: 4, note: null });
   db.ideas.push({ id: seq++, athlete_id: a, text: 'Читмил в субботу за очки', status: 'new', created_at: stamp(), decided_at: null });
   settle(a);
@@ -348,8 +375,10 @@ export const api = {
   async saveExercise(ex) {
     needAdmin();
     if (!ex.name || !ex.name.trim()) fail('Нужно название');
-    if (ex.id) Object.assign(db.exercises.find((e) => e.id === ex.id), ex);
-    else db.exercises.push({ ...ex, id: seq++ });
+    if (ex.id) return clone(Object.assign(db.exercises.find((e) => e.id === ex.id), ex));
+    const row = { ...ex, id: seq++ };
+    db.exercises.push(row);
+    return clone(row);
   },
 
   async openDay(date, athleteId) {
@@ -439,7 +468,10 @@ export const api = {
     const row = { valid_from: addDays(today(), 1) };
     RULE_KEYS.forEach((k) => { row[k] = p[k] ?? null; });
     row.calibration = p.calibration ?? true;
+    row.per_exercise = p.per_exercise ?? {};
     db.rules = db.rules.filter((r) => r.valid_from !== row.valid_from).concat(row);
+    db.logs.filter((l) => l.date > addDays(today(), -60) && (l.review === 'accepted' || l.review === 'corrected')
+      && isCal(rulesFor(l.date))).forEach(awardSet);
     return clone(row);
   },
 
@@ -449,7 +481,8 @@ export const api = {
     settle(a);
     const r = rulesFor(today());
     const s = streakAt(a, today());
-    return { balance: balance(a), rating: rating(a), streak: s, mult: streakMult(r, s), phone_price: r?.phone_price ?? null };
+    const theory = current.role === 'admin' ? db.theory.filter((x) => x.athlete_id === a).reduce((n, x) => n + x.points, 0) : null;
+    return { balance: balance(a), rating: rating(a), streak: s, mult: streakMult(r, s), phone_price: r?.phone_price ?? null, theory };
   },
 
   async ledger(a, limit = 60) {
@@ -524,5 +557,55 @@ export const api = {
     i.status = status;
     i.decided_at = status === 'new' ? null : stamp();
     return clone(i);
+  },
+
+  // ── v3.1 ──
+
+  async theory(a, from, to) {
+    if (current.role !== 'admin') return [];
+    return inRange(db.theory, a, from, to);
+  },
+
+  async setDayPlan(a, date, plan, note) {
+    needAdmin();
+    if (date < today()) fail('Прошедший день менять нельзя');
+    let full = null;
+    if (plan !== null) {
+      if (!plan.length) fail('В плане дня нужно хотя бы одно упражнение');
+      full = plan.map((x) => {
+        const e = db.exercises.find((y) => y.id === x.id) ?? fail('В плане есть неизвестное упражнение');
+        if (x.sets < 1 || x.sets > 10 || (x.target_reps != null && (x.target_reps < 1 || x.target_reps > 1000))) {
+          fail('Подходов — от 1 до 10, цель — от 1 до 1000');
+        }
+        return { id: e.id, name: e.name, sets: x.sets, target_reps: x.target_reps ?? null };
+      });
+    }
+    const d = setStatus(a, date, 'training');
+    d.plan = full ?? (date === today() ? currentPlan() : null);
+    d.note = (note || '').trim() || null;
+    return clone(d);
+  },
+
+  async grantPoints(a, amount, note) {
+    needAdmin();
+    if (!amount) fail('Укажи число очков');
+    if (!note || !note.trim()) fail('Напиши причину');
+    const row = { athlete_id: a, date: today(), kind: 'manual', amount: Math.max(amount, -balance(a)), rating: Math.max(amount, 0),
+      note: `Тимур: ${note.trim()}` };
+    addLedger(row);
+    settle(a);
+    return clone(row);
+  },
+
+  async deleteIdea(id) {
+    needAdmin();
+    db.ideas = db.ideas.filter((i) => i.id !== id);
+  },
+
+  async resetAthlete(a) {
+    needAdmin();
+    ['ledger', 'purchases', 'sick', 'ideas', 'logs', 'mornings', 'days', 'theory'].forEach((k) => {
+      db[k] = db[k].filter((x) => x.athlete_id !== a);
+    });
   },
 };

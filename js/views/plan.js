@@ -1,6 +1,6 @@
 // «План» (админ): старт калибровки, шаблон недели, комплекс и правка одного дня.
 
-import { html, WEEKDAYS, dayTitle } from '../util.js';
+import { html, WEEKDAYS, dayTitle, addDays } from '../util.js';
 import { DAY_STATUS } from '../logic.js';
 
 const TEMPLATE_OPTIONS = [
@@ -17,6 +17,7 @@ export async function render(el, ctx, args, alive) {
   if (!alive()) return;
 
   const rows = exercises.filter((e) => e.active).map((e) => ({ ...e }));
+  const athleteName = ctx.athletes.find((a) => a.id === ctx.athleteId)?.name || 'без имени';
   const hidden = exercises.filter((e) => !e.active);
 
   el.innerHTML = String(html`
@@ -76,6 +77,24 @@ export async function render(el, ctx, args, alive) {
         <p class="label ok" id="one-saved" aria-live="polite"></p>`
       : html`<p class="label">Сначала создай аккаунт друга в Supabase.</p>`}
     </section>
+
+    ${ctx.athleteId ? html`<section class="card">
+      <h2 class="h2">План на конкретный день</h2>
+      <p class="label">Свой набор упражнений и задание на один день — сегодня или позже. Остальные дни идут по общему комплексу.</p>
+      <label class="label" for="dp-date">День</label>
+      <input class="input" id="dp-date" type="date" min="${clock.today}" value="${addDays(clock.today, 1)}">
+      <div id="dp-body"></div>
+    </section>
+
+    <section class="card">
+      <h2 class="h2">Очистить данные атлета</h2>
+      <p class="label">Стирает подходы, дни, утро, очки, покупки, больничные и идеи выбранного атлета. Аккаунт, комплекс и правила
+        остаются. Нужно, чтобы убрать следы тестов. Вернуть нельзя.</p>
+      <label class="label" for="reset-confirm">Чтобы подтвердить, впиши имя атлета: <b class="em">${athleteName}</b></label>
+      <input class="input" id="reset-confirm" type="text" autocomplete="off">
+      <p class="error" id="reset-error" role="alert"></p>
+      <button type="button" class="ghost ghost-bad" id="reset">Очистить всё у ${athleteName}</button>
+    </section>` : ''}
 
     <section class="card">
       <div class="row"><p class="label">Вошёл как ${me.name || 'админ'}</p>
@@ -195,5 +214,119 @@ export async function render(el, ctx, args, alive) {
     } catch (err) { error.textContent = err.message; }
   });
 
+  // План на конкретный день
+  const dpDate = el.querySelector('#dp-date');
+  if (dpDate) {
+    const loadDay = async () => {
+      const date = dpDate.value;
+      const body = el.querySelector('#dp-body');
+      if (!date || date < clock.today) { body.innerHTML = String(html`<p class="error">Выбери сегодня или день позже</p>`); return; }
+      const [row] = await api.days(ctx.athleteId, date, date);
+      dayEditor(body, ctx, date, row ?? null, await api.exercises());
+    };
+    dpDate.addEventListener('change', loadDay);
+    loadDay();
+  }
+
+  // Очистка
+  el.querySelector('#reset')?.addEventListener('click', async () => {
+    const err = el.querySelector('#reset-error');
+    if (el.querySelector('#reset-confirm').value.trim() !== athleteName) { err.textContent = 'Имя не совпадает'; return; }
+    err.textContent = '';
+    try {
+      await api.resetAthlete(ctx.athleteId);
+      ctx.toast(`Данные ${athleteName} очищены`);
+      ctx.refresh();
+    } catch (e) { err.textContent = e.message; }
+  });
+
   el.querySelector('#sign-out').addEventListener('click', ctx.signOut);
+}
+
+// Редактор одного дня: галочка — упражнение в плане дня, свои подходы и цель, задание текстом.
+function dayEditor(old, ctx, date, row, exercises) {
+  // Новый узел — чтобы обработчики прошлого дня не копились.
+  const body = old.cloneNode(false);
+  old.replaceWith(body);
+  const general = exercises.filter((e) => e.active).sort((a, b) => a.position - b.position || a.id - b.id)
+    .map(({ id, name, sets, target_reps }) => ({ id, name, sets, target_reps }));
+  const key = (p) => JSON.stringify(p.map((x) => [x.id, x.sets, x.target_reps ?? null]));
+  const custom = Boolean(row?.plan) && key(row.plan) !== key(general);
+  const base = row?.plan ?? general;
+  const items = exercises.filter((e) => e.active || base.some((b) => b.id === e.id)).map((e) => {
+    const inPlan = base.find((b) => b.id === e.id);
+    return { id: e.id, name: e.name, on: Boolean(inPlan), sets: inPlan?.sets ?? e.sets, target_reps: inPlan ? inPlan.target_reps : e.target_reps };
+  });
+
+  const draw = () => {
+    body.innerHTML = String(html`
+      ${row && row.status !== 'training' ? html`<p class="notice">Сейчас этот день: ${DAY_STATUS[row.status]?.toLowerCase() ?? 'не задан'}.
+        Сохранишь план — станет тренировкой.</p>` : ''}
+      <p class="label">${custom ? 'У этого дня свой план.' : 'Сейчас: общий комплекс. Поменяй, что нужно, и сохрани.'}</p>
+      ${items.map((x, i) => html`<div class="ex-edit dp-item" data-i="${i}">
+        <label class="check"><input type="checkbox" data-k="on" ${x.on ? html`checked` : ''}><span class="em">${x.name}</span></label>
+        <div class="grid-2">
+          <div class="field"><label class="label" for="dp-sets-${i}">Подходов</label>
+            <input class="input" id="dp-sets-${i}" data-k="sets" type="number" inputmode="numeric" min="1" max="10" value="${x.sets}"></div>
+          <div class="field"><label class="label" for="dp-goal-${i}">Цель, повторов</label>
+            <input class="input" id="dp-goal-${i}" data-k="target_reps" type="number" inputmode="numeric" min="1" max="1000" placeholder="без цели" value="${x.target_reps ?? ''}"></div>
+        </div>
+      </div>`)}
+      <div class="row-gap dp-new">
+        <input class="input" id="dp-new-name" type="text" maxlength="60" placeholder="Новое упражнение только на этот день" aria-label="Новое упражнение">
+        <button type="button" class="ghost" id="dp-new">Добавить</button>
+      </div>
+      <label class="label" for="dp-note">Задание дня (друг увидит на экране «Сегодня»)</label>
+      <textarea id="dp-note" class="input textarea" rows="2" maxlength="500" placeholder="Например: подтягивания широким хватом">${row?.note ?? ''}</textarea>
+      <p class="error" id="dp-error" role="alert"></p>
+      <button type="button" class="btn" id="dp-save">Сохранить план на ${dayTitle(date)}</button>
+      ${custom || row?.note ? html`<button type="button" class="ghost" id="dp-reset">Вернуть общий комплекс</button>` : ''}`);
+  };
+  draw();
+
+  body.addEventListener('input', (e) => {
+    const i = Number(e.target.closest('.dp-item')?.dataset.i);
+    const k = e.target.dataset.k;
+    if (Number.isNaN(i) || !k) return;
+    items[i][k] = k === 'on' ? e.target.checked : e.target.value === '' ? null : Number(e.target.value);
+  });
+  body.addEventListener('change', (e) => {
+    if (e.target.dataset.k === 'on') items[Number(e.target.closest('.dp-item').dataset.i)].on = e.target.checked;
+  });
+  body.addEventListener('click', async (e) => {
+    const err = body.querySelector('#dp-error');
+    if (e.target.id === 'dp-new') {
+      const name = body.querySelector('#dp-new-name').value.trim();
+      if (!name) { err.textContent = 'Напиши название'; return; }
+      try {
+        // Упражнение на один день не попадает в общий комплекс.
+        const ex = await ctx.api.saveExercise({ name, sets: 3, target_reps: null, position: 999, active: false });
+        items.push({ id: ex.id, name: ex.name, on: true, sets: 3, target_reps: null });
+        draw();
+      } catch (x) { err.textContent = x.message; }
+    }
+    if (e.target.id === 'dp-save') {
+      const plan = items.filter((x) => x.on).map(({ id, sets, target_reps }) => ({ id, sets, target_reps }));
+      if (!plan.length) { err.textContent = 'Отметь хотя бы одно упражнение'; return; }
+      if (plan.some((x) => !Number.isInteger(x.sets) || x.sets < 1 || x.sets > 10
+        || (x.target_reps !== null && (!Number.isInteger(x.target_reps) || x.target_reps < 1)))) {
+        err.textContent = 'Подходов — от 1 до 10, цель — целое число или пусто';
+        return;
+      }
+      try {
+        await ctx.api.setDayPlan(ctx.athleteId, date, plan, body.querySelector('#dp-note').value);
+        ctx.toast(`План на ${dayTitle(date)} сохранён`);
+        const [fresh] = await ctx.api.days(ctx.athleteId, date, date);
+        dayEditor(body, ctx, date, fresh ?? null, await ctx.api.exercises());
+      } catch (x) { err.textContent = x.message; }
+    }
+    if (e.target.id === 'dp-reset') {
+      try {
+        await ctx.api.setDayPlan(ctx.athleteId, date, null, null);
+        ctx.toast(`${dayTitle(date)}: общий комплекс`);
+        const [fresh] = await ctx.api.days(ctx.athleteId, date, date);
+        dayEditor(body, ctx, date, fresh ?? null, await ctx.api.exercises());
+      } catch (x) { err.textContent = x.message; }
+    }
+  });
 }

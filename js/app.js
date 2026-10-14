@@ -120,13 +120,14 @@ async function route() {
   const view = VIEWS[name];
   const isAdmin = ctx.me.role === 'admin';
   const friend = FRIEND_ROUTES.includes(name);
-  const allowed = tabs.some((t) => t.route === name) || name === 'day' || (isAdmin && friend);
+  // Правила атлет открывает по ссылке из «Цели», если Тимур включил показ (проверяет сам экран).
+  const allowed = tabs.some((t) => t.route === name) || name === 'day' || (isAdmin && friend) || name === 'rules';
   if (!view || !allowed) {
     location.replace(`#/${tabs[0].route}`);
     return;
   }
   const sub = name === 'day' ? 'today' : name;
-  const active = isAdmin && friend ? 'today' : sub;
+  const active = isAdmin && friend ? 'today' : !isAdmin && name === 'rules' ? 'goal' : sub;
   const mark = (t, on) => {
     t.classList.toggle(t.classList.contains('tab') ? 'tab-on' : 'sub-on', on);
     if (on) t.setAttribute('aria-current', 'page'); else t.removeAttribute('aria-current');
