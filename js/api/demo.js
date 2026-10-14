@@ -87,10 +87,11 @@ function rulesFor(date) {
 }
 
 const isCal = (r) => !r || r.calibration !== false;
-// [отмечено подходов из плана, всего подходов в плане] — как day_counts в базе.
+// [засчитано подходов из плана, всего подходов в плане] — как day_counts в базе:
+// засчитан подход больше чем с 0 повторов (по числу Тимура, если проверен).
 function dayCounts(a, date) {
   const plan = findDay(a, date)?.plan ?? currentPlan();
-  const done = db.logs.filter((l) => l.athlete_id === a && l.date === date && l.claimed !== null
+  const done = db.logs.filter((l) => l.athlete_id === a && l.date === date && (l.confirmed ?? l.claimed ?? 0) > 0
     && plan.some((e) => e.id === l.exercise_id && l.set_no <= e.sets)).length;
   return [done, plan.reduce((s, e) => s + e.sets, 0)];
 }
@@ -110,6 +111,9 @@ function streakAt(a, date) {
   }
   return n;
 }
+
+// Серия дня, если он будет сделан: полные дни до него + он сам — как day_streak в базе.
+const dayStreak = (a, date) => streakAt(a, addDays(date, -1)) + 1;
 
 function streakMult(r, s) {
   if (!r || r.streak_from == null || r.streak_step == null || s < r.streak_from) return 1;
@@ -146,18 +150,19 @@ function awardSet(l) {
         bon = Math.max(0, Math.min(bon, pe.cap - other));
       }
     }
-    mult = streakMult(r, streakAt(l.athlete_id, l.date));
+    mult = streakMult(r, dayStreak(l.athlete_id, l.date));
     total = Math.round((base + bon) * mult);
   }
 
   db.theory = db.theory.filter((x) => x.set_id !== l.id);
-  if (ok && cal) db.theory.push({ set_id: l.id, athlete_id: l.athlete_id, date: l.date, exercise_id: l.exercise_id, points: total, bonus: bon });
+  if (ok && cal) db.theory.push({ set_id: l.id, athlete_id: l.athlete_id, date: l.date, exercise_id: l.exercise_id, points: total, bonus: bon, mult });
 
   ok = ok && !cal;
   const reviewed = l.points != null;
   const delta = (ok ? total : 0) - (l.points ?? 0);
   l.points = ok ? total : null;
   l.bonus = ok ? bon : null;
+  l.mult = ok ? mult : null;
   if (!delta) return;
   let note = `${reviewed ? 'Пересмотр: ' : ''}${name} · подход ${l.set_no}`;
   if (ok && mult > 1) note += ` · серия ×${mult}`;
@@ -181,6 +186,13 @@ function settle(a) {
     addLedger({ athlete_id: a, date: d, kind: 'penalty', amount: -pen,
       note: `Пропуск: сделано ${c[0]} из ${c[1]} подходов · −${r.miss_penalty_pct}% баланса`, key: `penalty:${d}` });
   }
+
+  // Тимур передумал и день снова засчитан — штраф возвращается.
+  db.ledger.filter((x) => x.athlete_id === a && x.kind === 'penalty' && x.amount < 0 && x.date >= addDays(t, -60)
+    && !hasKey(a, `unpenalty:${x.date}`) && dayDone(a, x.date)).forEach((x) => {
+    addLedger({ athlete_id: a, date: x.date, kind: 'refund', amount: -x.amount,
+      note: 'Штраф снят: день засчитан после проверки', key: `unpenalty:${x.date}` });
+  });
 
   const price = rulesFor(t)?.phone_price;
   if (price > 0) {
@@ -341,7 +353,17 @@ export const api = {
 
   async setWeekday(dow, status) {
     needAdmin();
-    db.template.find((t) => t.dow === dow).status = status;
+    const t = db.template.find((x) => x.dow === dow);
+    // Прошедшие дни остаются со старым статусом — как триггер freeze_past_days в базе.
+    const start = db.settings.start_date;
+    if (start && t.status !== status) {
+      for (let d = start; d < today(); d = addDays(d, 1)) {
+        if (isoDow(d) === dow && !findDay(ATHLETE.id, d)) {
+          db.days.push({ athlete_id: ATHLETE.id, date: d, status: t.status, plan: t.status === 'training' ? currentPlan() : null, note: null });
+        }
+      }
+    }
+    t.status = status;
   },
 
   async exercises() {
@@ -398,7 +420,7 @@ export const api = {
     Object.assign(prev, { claimed, has_video: hasVideo });
     if (changed) {
       Object.assign(prev, { review: 'pending', confirmed: null });
-      if (prev.points != null || prev.bonus != null) awardSet(prev);
+      if (prev.points != null || prev.bonus != null || db.theory.some((x) => x.set_id === prev.id)) awardSet(prev);
     }
     return clone(prev);
   },
@@ -447,7 +469,7 @@ export const api = {
     row.per_exercise = p.per_exercise ?? {};
     db.rules = db.rules.filter((r) => r.valid_from < row.valid_from).concat(row);
     db.logs.filter((l) => l.date > addDays(today(), -60) && (l.review === 'accepted' || l.review === 'corrected')
-      && isCal(rulesFor(l.date))).forEach(awardSet);
+      && (isCal(rulesFor(l.date)) || db.theory.some((x) => x.set_id === l.id))).forEach(awardSet);
     return clone(row);
   },
 
@@ -457,9 +479,10 @@ export const api = {
     settle(a);
     const r = rulesFor(today());
     const s = streakAt(a, today());
+    const mult = streakMult(r, dayStreak(a, today()));
     const theory = current.role === 'admin' ? db.theory.filter((x) => x.athlete_id === a).reduce((n, x) => n + x.points, 0) : null;
     const phone = db.ledger.find((x) => x.athlete_id === a && x.key === 'phone');
-    return { balance: balance(a), rating: rating(a), streak: s, mult: streakMult(r, s), phone_price: r?.phone_price ?? null,
+    return { balance: balance(a), rating: rating(a), streak: s, mult, phone_price: r?.phone_price ?? null,
       phone_bought: phone?.date ?? null, theory };
   },
 
@@ -635,9 +658,14 @@ export const api = {
       if (!x.note?.startsWith('Удалено Тимуром: ')) x.note = `Удалено Тимуром: ${x.note ?? ''}`;
       return;
     }
-    const l = x.set_id && db.logs.find((s) => s.id === x.set_id);
-    if (l) { l.points = null; l.bonus = null; }
     db.ledger = db.ledger.filter((r) => r.id !== id);
+    // У подхода остаются очки других его записей — как в базе.
+    const l = x.set_id && db.logs.find((s) => s.id === x.set_id);
+    if (l) {
+      const rest = db.ledger.filter((r) => r.set_id === l.id);
+      l.points = rest.length ? rest.reduce((n, r) => n + r.rating, 0) : null;
+      if (l.points === null) { l.bonus = null; l.mult = null; }
+    }
   },
 
   // ── v3.3 ──
