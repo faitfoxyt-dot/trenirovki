@@ -1,7 +1,7 @@
 // «План» (админ): старт, шаблон недели, комплекс из списка упражнений, план на день, очистка.
 
 import { html, WEEKDAYS, dayTitle, addDays } from '../util.js';
-import { DAY_STATUS } from '../logic.js';
+import { DAY_STATUS, unitOf, unitText } from '../logic.js';
 
 const TEMPLATE_OPTIONS = [
   { value: '', label: 'Не задано' },
@@ -141,13 +141,13 @@ export async function render(el, ctx, args, alive) {
         <label class="label" for="ex-id-${i}">Упражнение</label>
         <select class="input" id="ex-id-${i}" data-k="id">
           ${catalog.map((e) => html`<option value="${e.id}" ${e.id === x.id ? html`selected` : ''}
-            ${e.id !== x.id && rows.some((r) => r.id === e.id) ? html`disabled` : ''}>${e.name}</option>`)}
+            ${e.id !== x.id && rows.some((r) => r.id === e.id) ? html`disabled` : ''}>${e.name}${e.unit === 'sec' ? ' · на время' : ''}</option>`)}
         </select>
       </div>
       <div class="grid-2">
         <div class="field"><label class="label" for="ex-sets-${i}">Подходов</label>
           <input class="input" id="ex-sets-${i}" data-k="sets" type="number" inputmode="numeric" min="1" max="10" value="${x.sets}"></div>
-        <div class="field"><label class="label" for="ex-goal-${i}">Цель, повторов</label>
+        <div class="field"><label class="label" for="ex-goal-${i}">Цель, ${unitText(unitOf(x, catalog)).many}</label>
           <input class="input" id="ex-goal-${i}" data-k="target_reps" type="number" inputmode="numeric" min="1" max="1000" placeholder="без цели" value="${x.target_reps ?? ''}"></div>
       </div>
       <div class="row">
@@ -286,11 +286,11 @@ function dayEditor(old, ctx, date, row, exercises) {
         Сохранишь план — станет тренировкой.</p>` : ''}
       <p class="label">${custom ? 'У этого дня свой план.' : 'Сейчас: общий комплекс. Поменяй, что нужно, и сохрани.'}</p>
       ${items.map((x, i) => html`<div class="ex-edit dp-item" data-i="${i}">
-        <label class="check"><input type="checkbox" data-k="on" ${x.on ? html`checked` : ''}><span class="em">${x.name}</span></label>
+        <label class="check"><input type="checkbox" data-k="on" ${x.on ? html`checked` : ''}><span class="em">${x.name}${unitOf(x, exercises) === 'sec' ? ' · на время' : ''}</span></label>
         <div class="grid-2">
           <div class="field"><label class="label" for="dp-sets-${i}">Подходов</label>
             <input class="input" id="dp-sets-${i}" data-k="sets" type="number" inputmode="numeric" min="1" max="10" value="${x.sets}"></div>
-          <div class="field"><label class="label" for="dp-goal-${i}">Цель, повторов</label>
+          <div class="field"><label class="label" for="dp-goal-${i}">Цель, ${unitText(unitOf(x, exercises)).many}</label>
             <input class="input" id="dp-goal-${i}" data-k="target_reps" type="number" inputmode="numeric" min="1" max="1000" placeholder="без цели" value="${x.target_reps ?? ''}"></div>
         </div>
       </div>`)}

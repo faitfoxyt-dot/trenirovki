@@ -2,16 +2,18 @@
 // Админ меняет — действует сразу. Атлет видит только чтение, если Тимур включил показ.
 
 import { html } from '../util.js';
-import { POINTS, signed } from '../logic.js';
+import { POINTS, signed, amount, isSec } from '../logic.js';
 import { howItWorks } from './goal.js';
 
 // Числа у каждого упражнения свои.
+// У упражнений на время те же поля, только за секунду.
 const PER_EX = [
-  { k: 'rep', label: 'За повтор', step: 0.1 },
+  { k: 'rep', label: 'За повтор', sec: 'За секунду', step: 0.1 },
   { k: 'set', label: 'За полный подход', step: 0.1 },
-  { k: 'over', label: 'Сверх цели, за повтор', step: 0.1 },
+  { k: 'over', label: 'Сверх цели, за повтор', sec: 'Сверх цели, за секунду', step: 0.1 },
   { k: 'cap', label: 'Потолок в день', int: true },
 ];
+const fieldLabel = (f, unit) => (isSec(unit) && f.sec ? f.sec : f.label);
 
 // int — целое число в базе; иначе можно дробное (шаг step).
 const GROUPS = [
@@ -72,8 +74,8 @@ export async function render(el, ctx, args, alive) {
 
     <section class="card">
       <h2 class="h2">Упражнения и очки</h2>
-      <p class="label">Очки идут за подходы, которые проверил генерал. «Полный подход» — когда добил цель по повторам.
-        «Сверх цели» — доплата за каждый лишний повтор, но за день по упражнению не больше потолка.
+      <p class="label">Очки идут за подходы, которые проверил генерал. «Полный подход» — когда добил цель.
+        «Сверх цели» — доплата за каждый лишний повтор (или секунду у упражнений на время), но за день по упражнению не больше потолка.
         ${isAdmin ? 'Отсюда упражнения попадают в «План».' : ''}</p>
       <div id="ex-rules"></div>
       ${isAdmin ? html`<button type="button" class="ghost" id="ex-new">+ Новое упражнение</button>` : ''}
@@ -112,18 +114,22 @@ export async function render(el, ctx, args, alive) {
       ${isAdmin ? html`<div class="row-gap">
           <input class="input" data-name type="text" maxlength="60" placeholder="Название упражнения" value="${e.name}" aria-label="Название">
           <button type="button" class="ghost icon" data-del aria-label="Удалить ${e.name}">✕</button>
+        </div>
+        <div class="seg" role="group" aria-label="Как считать">
+          <button type="button" class="pill ${isSec(e.unit) ? '' : 'pill-on'}" data-unit="reps" aria-pressed="${!isSec(e.unit)}">Повторы</button>
+          <button type="button" class="pill ${isSec(e.unit) ? 'pill-on' : ''}" data-unit="sec" aria-pressed="${isSec(e.unit)}">На время</button>
         </div>`
-        : html`<p class="em">${e.name}</p>`}
-      ${e.active ? html`<p class="label">В общем комплексе${e.target_reps ? ` · цель ${e.target_reps}` : ''}</p>` : ''}
+        : html`<p class="em">${e.name}${isSec(e.unit) ? ' · на время' : ''}</p>`}
+      ${e.active ? html`<p class="label">В общем комплексе${e.target_reps ? ` · цель ${amount(e.target_reps, e.unit)}` : ''}</p>` : ''}
       <div class="grid-2">${PER_EX.map((f) => html`<div class="field">
-        <label class="label" for="p-${keyOf(e)}-${f.k}">${f.label}</label>
+        <label class="label" for="p-${keyOf(e)}-${f.k}">${fieldLabel(f, e.unit)}</label>
         <input class="input num-in" id="p-${keyOf(e)}-${f.k}" data-pk="${f.k}" type="number" inputmode="decimal"
           min="0" step="${f.int ? 1 : f.step}" placeholder="—" value="${e.pts?.[f.k] ?? ''}" ${ro}></div>`)}
       </div>
     </div>`)}
     ${exercises.length ? '' : html`<p class="label">Упражнений пока нет.</p>`}`);
   };
-  exercises.forEach((e) => { e.pts = { ...(per[e.id] ?? {}) }; e.orig = e.name; });
+  exercises.forEach((e) => { e.pts = { ...(per[e.id] ?? {}) }; e.orig = e.name; e.unit = e.unit ?? 'reps'; e.origUnit = e.unit; });
   draw();
 
   // Ввод сразу запоминаем в строке, чтобы перерисовка не теряла числа.
@@ -134,6 +140,14 @@ export async function render(el, ctx, args, alive) {
     else if (e.target.dataset.pk) ex.pts[e.target.dataset.pk] = e.target.value;
   });
   list.addEventListener('click', (e) => {
+    const unitBtn = e.target.closest('[data-unit]');
+    if (unitBtn) {
+      const ex = exercises.find((x) => String(keyOf(x)) === unitBtn.closest('[data-key]').dataset.key);
+      ex.unit = unitBtn.dataset.unit;
+      draw();
+      example();
+      return;
+    }
     if (!e.target.closest('[data-del]')) return;
     const i = exercises.findIndex((x) => String(keyOf(x)) === e.target.closest('[data-key]').dataset.key);
     const ex = exercises[i];
@@ -146,7 +160,7 @@ export async function render(el, ctx, args, alive) {
   });
   el.querySelector('#ex-new')?.addEventListener('click', () => {
     fresh += 1;
-    exercises.push({ tmp: `new${fresh}`, name: '', pts: {}, active: false });
+    exercises.push({ tmp: `new${fresh}`, name: '', unit: 'reps', pts: {}, active: false });
     draw();
     list.querySelector(`[data-key="new${fresh}"] [data-name]`).focus();
   });
@@ -164,7 +178,7 @@ export async function render(el, ctx, args, alive) {
       if (!e.name.trim()) bad.push('название упражнения');
       PER_EX.forEach((f) => {
         const { v, ok } = num({ value: String(e.pts[f.k] ?? '') }, f);
-        if (!ok) bad.push(`${e.name || 'новое'}: ${f.label.toLowerCase()}`);
+        if (!ok) bad.push(`${e.name || 'новое'}: ${fieldLabel(f, e.unit).toLowerCase()}`);
         if (v !== null) row[f.k] = v;
       });
       if (Object.keys(row).length) out.per_exercise[keyOf(e)] = row;
@@ -179,13 +193,14 @@ export async function render(el, ctx, args, alive) {
     const ex = exercises.find((e) => v.per_exercise[keyOf(e)]) ?? exercises[0];
     const p = ex ? v.per_exercise[keyOf(ex)] ?? {} : {};
     if (!ex || !(p.rep || p.set)) { box.textContent = 'Впиши очки хотя бы одному упражнению — здесь появится пример.'; return; }
-    const target = ex.target_reps ?? 8;
-    const reps = target + 2;
+    const sec = isSec(ex.unit);
+    const target = ex.target_reps ?? (sec ? 60 : 8);
+    const reps = target + (sec ? 10 : 2);
     const base = reps * (p.rep ?? 0) + (p.set ?? 0);
-    const over = p.over ? Math.min(Math.round(2 * p.over), p.cap ?? Infinity) : 0;
+    const over = p.over ? Math.min(Math.round((reps - target) * p.over), p.cap ?? Infinity) : 0;
     const top = v.streak_from && v.streak_step ? v.streak_max ?? null : null;
-    box.textContent = `${ex.name}, подход ${reps} повторов при цели ${target}: ${POINTS(Math.round(base + over))}`
-      + (over ? ` (из них ${signed(Math.round(over))} за повторы сверх цели)` : '')
+    box.textContent = `${ex.name}, подход ${sec ? amount(reps, 'sec') : `${reps} повторов`} при цели ${amount(target, ex.unit)}: ${POINTS(Math.round(base + over))}`
+      + (over ? ` (из них ${signed(Math.round(over))} за ${sec ? 'секунды' : 'повторы'} сверх цели)` : '')
       + (top ? `. На потолке серии всё ×${top}: ${POINTS(Math.round((base + over) * top))}.` : '.')
       + (v.calibration ? ' Пока тестовый период, это только теория.' : '');
   };
@@ -222,14 +237,15 @@ export async function render(el, ctx, args, alive) {
       for (const e of exercises) {
         const name = e.name.trim();
         if (e.id) {
-          if (name !== e.orig) await api.saveExercise({ ...e, name });
+          if (name !== e.orig || e.unit !== e.origUnit) await api.saveExercise({ ...e, name });
         } else {
-          const row = await api.saveExercise({ name, sets: 3, target_reps: null, position: 999, active: false });
+          const row = await api.saveExercise({ name, unit: e.unit, sets: 3, target_reps: null, position: 999, active: false });
           values.per_exercise[row.id] = values.per_exercise[e.tmp];
           delete values.per_exercise[e.tmp];
           Object.assign(e, { id: row.id, tmp: undefined });
         }
         e.orig = name;
+        e.origUnit = e.unit;
       }
       for (const e of removed.splice(0)) await api.saveExercise({ ...e, active: false, archived: true });
       await api.saveRules(values);

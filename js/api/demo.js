@@ -14,9 +14,10 @@ const db = {
   rules: [{ valid_from: '2000-01-01', calibration: true }],
   template: [1, 2, 3, 4, 5, 6, 7].map((dow) => ({ dow, status: dow === 7 ? 'rest' : 'training' })),
   exercises: [
-    { id: 1, name: 'Подтягивания', sets: 3, target_reps: null, position: 0, active: true, archived: false },
-    { id: 2, name: 'Пресс', sets: 3, target_reps: null, position: 1, active: true, archived: false },
-    { id: 3, name: 'Отжимания на брусьях', sets: 3, target_reps: null, position: 2, active: false, archived: false },
+    { id: 1, name: 'Подтягивания', unit: 'reps', sets: 3, target_reps: null, position: 0, active: true, archived: false },
+    { id: 2, name: 'Пресс', unit: 'reps', sets: 3, target_reps: null, position: 1, active: true, archived: false },
+    { id: 3, name: 'Отжимания на брусьях', unit: 'reps', sets: 3, target_reps: null, position: 2, active: false, archived: false },
+    { id: 4, name: 'Планка', unit: 'sec', sets: 2, target_reps: 60, position: 3, active: false, archived: false },
   ],
   days: [],
   logs: [],
@@ -48,7 +49,7 @@ function clock() {
 function currentPlan() {
   return db.exercises.filter((e) => e.active)
     .sort((a, b) => a.position - b.position || a.id - b.id)
-    .map(({ id, name, sets, target_reps }) => ({ id, name, sets, target_reps }));
+    .map(({ id, name, unit, sets, target_reps }) => ({ id, name, unit, sets, target_reps }));
 }
 
 const findDay = (a, date) => db.days.find((x) => x.athlete_id === a && x.date === date);
@@ -264,7 +265,7 @@ function setStatus(a, date, status) {
   const rulesFrom = addDays(start, 7);
   db.settings.start_date = start;
   db.rules.push({ valid_from: rulesFrom, calibration: false,
-    per_exercise: { 1: { rep: 2, set: 5, over: 2, cap: 6 }, 2: { rep: 0.5, set: 5, over: 0.5, cap: 3 }, 3: { rep: 1, set: 5 } },
+    per_exercise: { 1: { rep: 2, set: 5, over: 2, cap: 6 }, 2: { rep: 0.5, set: 5, over: 0.5, cap: 3 }, 3: { rep: 1, set: 5 }, 4: { rep: 0.2, set: 5, over: 0.2, cap: 4 } },
     streak_from: 3, streak_step: 0.1, streak_max: 1.5,
     miss_penalty_pct: 10, rest_day_price: 150, purchase_limit_week: 2, phone_price: 4000 });
 
@@ -377,7 +378,7 @@ export const api = {
     needAdmin();
     if (!ex.name || !ex.name.trim()) fail('Нужно название');
     if (ex.id) return clone(Object.assign(db.exercises.find((e) => e.id === ex.id), ex));
-    const row = { ...ex, id: seq++ };
+    const row = { unit: 'reps', ...ex, id: seq++ };
     db.exercises.push(row);
     return clone(row);
   },
@@ -581,7 +582,7 @@ export const api = {
         if (x.sets < 1 || x.sets > 10 || (x.target_reps != null && (x.target_reps < 1 || x.target_reps > 1000))) {
           fail('Подходов — от 1 до 10, цель — от 1 до 1000');
         }
-        return { id: e.id, name: e.name, sets: x.sets, target_reps: x.target_reps ?? null };
+        return { id: e.id, name: e.name, unit: e.unit, sets: x.sets, target_reps: x.target_reps ?? null };
       });
     }
     const d = setStatus(a, date, 'training');

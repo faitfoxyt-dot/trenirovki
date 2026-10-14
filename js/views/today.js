@@ -2,7 +2,7 @@
 // из календаря, а админу показывает день друга без возможности править.
 
 import { html, dayTitle, addDays, shortDate, debounce } from '../util.js';
-import { MUSCLES, DAY_STATUS, caption, goalText, reviewNote, dayMode, isCalibration } from '../logic.js';
+import { MUSCLES, DAY_STATUS, caption, goalText, reviewNote, dayMode, isCalibration, unitOf, unitText } from '../logic.js';
 
 export async function render(el, ctx, args, alive) {
   const { api, clock, settings, me } = ctx;
@@ -20,12 +20,13 @@ export async function render(el, ctx, args, alive) {
     return;
   }
 
-  const [day, logs, mornings, sick, wallet] = await Promise.all([
+  const [day, logs, mornings, sick, wallet, catalog] = await Promise.all([
     api.openDay(date, isAdmin ? athleteId : undefined),
     api.logs(athleteId, date, date),
     api.mornings(athleteId, date, date),
     date === clock.today ? api.sickRequests(athleteId, date) : [],
     date === clock.today ? api.wallet(isAdmin ? athleteId : undefined) : null,
+    api.exercises(),
   ]);
   if (!alive()) return;
 
@@ -65,7 +66,7 @@ export async function render(el, ctx, args, alive) {
     ${isToday || state.morning.muscles || state.morning.energy ? html`<section class="card" id="morning"></section>` : ''}
 
     ${status === 'training' && day.plan && !beforeStart
-      ? day.plan.map((ex) => exerciseCard(ex, date, state, editable, mode))
+      ? day.plan.map((ex) => exerciseCard(ex, date, state, editable, mode, catalog))
       : html`<section class="card">
           <h2 class="h2">${status ? DAY_STATUS[status] : 'План не задан'}</h2>
           <p class="label">${restText(status, beforeStart)}</p>
@@ -96,19 +97,21 @@ function restText(status, beforeStart) {
   return 'Крутой генерал ещё не задал план на этот день.';
 }
 
-function exerciseCard(ex, date, state, editable, mode) {
+function exerciseCard(ex, date, state, editable, mode, catalog) {
+  const unit = unitOf(ex, catalog);
+  const u = unitText(unit);
   const sets = Array.from({ length: ex.sets }, (_, i) => i + 1);
   return html`<section class="card">
-    <div class="stack-4"><h2 class="h2">${ex.name}</h2><p class="label">${goalText(ex)}</p></div>
+    <div class="stack-4"><h2 class="h2">${ex.name}</h2><p class="label">${goalText(ex, unit)}</p></div>
     ${sets.map((n) => {
       const key = `${ex.id}-${n}`;
       const log = state.logs.get(key);
       const cap = caption(date, ex.name, n);
-      return html`<div class="set" data-ex="${ex.id}" data-set="${n}">
+      return html`<div class="set" data-ex="${ex.id}" data-set="${n}" data-unit="${unit}">
         <div class="set-row">
           <span class="num" aria-hidden="true">${n}</span>
           <input class="input set-reps" type="number" inputmode="numeric" pattern="[0-9]*" min="0" max="1000"
-            placeholder="повторы" aria-label="${ex.name}, подход ${n}, повторы"
+            placeholder="${u.input}" aria-label="${ex.name}, подход ${n}, ${u.input}"
             value="${log?.claimed ?? ''}" ${mode !== 'open' ? html`disabled` : ''}>
           <label class="check"><input type="checkbox" class="set-video" ${log?.has_video ? html`checked` : ''}
             ${editable ? '' : html`disabled`}><span>Видео</span></label>
@@ -116,14 +119,14 @@ function exerciseCard(ex, date, state, editable, mode) {
             <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/></svg>
           </button>
         </div>
-        <p class="set-note" aria-live="polite">${noteHtml(log)}</p>
+        <p class="set-note" aria-live="polite">${noteHtml(log, unit)}</p>
       </div>`;
     })}
   </section>`;
 }
 
-function noteHtml(log) {
-  const text = reviewNote(log);
+function noteHtml(log, unit) {
+  const text = reviewNote(log, unit);
   if (!text) return '';
   const cls = { accepted: 'ok', corrected: 'warn', rejected: 'bad' }[log.review] ?? '';
   return html`<span class="${cls}">${text}</span>${log.comment ? html` · ${log.comment}` : ''}`;
@@ -150,7 +153,7 @@ function wireSets(el, ctx, date, state, mode) {
     try {
       const saved = await ctx.api.logSet(date, exId, setNo, claimed, video);
       state.logs.set(key, saved);
-      note.innerHTML = String(noteHtml(saved)) || 'Сохранено';
+      note.innerHTML = String(noteHtml(saved, row.dataset.unit)) || 'Сохранено';
     } catch (err) {
       note.innerHTML = '';
       note.append(Object.assign(document.createElement('span'), { className: 'bad', textContent: err.message }));
