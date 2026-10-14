@@ -115,11 +115,11 @@ function detailHtml(d, clock, exercises, showTheory) {
   return html`
     <div class="row"><h2 class="h2">${dayTitle(d.date)}</h2><span class="chip day-chip-${d.state}">${DAY_STATE[d.state]}</span></div>
     ${!isPast ? html`<p class="label">${d.status ? `План: ${DAY_STATUS[d.status].toLowerCase()}.` : 'План на этот день ещё не задан.'}
-      Статус дня задаёт Тимур в шаблоне недели или отдельно для дня.</p>` : ''}
+      Какой это день, решает крутой генерал.</p>` : ''}
     ${isPast && d.state === 'before' ? html`<p class="label">До старта.</p>` : ''}
     ${isPast && d.state === 'missed' ? html`<p class="label">${d.counts && d.counts.done
       ? `Пропуск: сделано ${d.counts.done} из ${d.counts.total} подходов плана.` : 'Тренировочный день без отметок.'}</p>` : ''}
-    ${d.row?.note && d.status === 'training' ? html`<p class="label">Задание от Тимура: «${d.row.note}»</p>` : ''}
+    ${d.row?.note && d.status === 'training' ? html`<p class="label">Приказ генерала: «${d.row.note}»</p>` : ''}
     ${showTheory && theoryDay ? html`<p class="label">Теоретически за день: <b class="em">${signed(theoryDay)}</b> · видишь только ты</p>` : ''}
     ${d.morning ? html`<p class="label">Утро: ${MUSCLES.find((m) => m.key === d.morning.muscles)?.label.toLowerCase() ?? '—'},
       энергия — ${d.morning.energy ?? '—'}${d.morning.note ? html`. «${d.morning.note}»` : ''}</p>` : ''}
@@ -129,7 +129,7 @@ function detailHtml(d, clock, exercises, showTheory) {
           <span class="review review-${l.review}">${REVIEW[l.review]}${pts(l)}</span></div>
         <p class="label">Заявлено: ${l.claimed ?? '—'}${l.review !== 'pending' ? ` · подтверждено: ${l.confirmed}` : ''}
           · видео ${l.has_video ? 'есть' : 'нет'}</p>
-        ${l.comment ? html`<p class="label comment">Тимур: ${l.comment}</p>` : ''}
+        ${l.comment ? html`<p class="label comment">Генерал: ${l.comment}</p>` : ''}
       </li>`)}
     </ul>` : ''}
     ${isPast && d.status === 'training' && d.state !== 'before'

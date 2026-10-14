@@ -3,6 +3,7 @@
 
 import { createClient } from '../../vendor/supabase.js';
 import { SUPABASE_URL, SUPABASE_KEY } from '../config.js';
+import { general } from '../util.js';
 
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: true, autoRefreshToken: true },
@@ -16,7 +17,7 @@ function check({ data, error }) {
 function friendly(message) {
   if (/Invalid login credentials/i.test(message)) return 'Неверная почта или пароль';
   if (/Failed to fetch|NetworkError|Load failed/i.test(message)) return 'Нет связи с сервером';
-  return message;
+  return general(message);
 }
 
 export const api = {

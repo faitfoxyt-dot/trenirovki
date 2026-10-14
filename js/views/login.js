@@ -16,7 +16,7 @@ export function render(root, ctx, onDone) {
       <p class="error" id="login-error" role="alert"></p>
       <button class="btn" type="submit">Войти</button>
     </form>
-    <p class="label center">Аккаунт выдаёт Тимур. Пароль можно сохранить в «Паролях» iPhone.</p>
+    <p class="label center">Аккаунт выдаёт крутой генерал. Пароль можно сохранить в «Паролях» iPhone.</p>
   </main>`);
 
   const form = root.querySelector('#login');

@@ -365,3 +365,13 @@ a.chip-link { color: var(--accent); text-decoration: none; border: 1px solid var
 #dp-body { display: flex; flex-direction: column; gap: 12px; }
 .ex-rules { padding-bottom: 4px; }
 .ex-rules .num-in { width: 100%; text-align: left; }
+
+/* «Как это работает» */
+.how { display: flex; flex-direction: column; gap: 16px; }
+.how-item { display: flex; gap: 12px; align-items: flex-start; }
+.how-icon { flex: none; width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center;
+  font-size: 18px; background: var(--bg); border: 1px solid var(--line); }
+.how-text { min-width: 0; display: flex; flex-direction: column; gap: 4px; font-size: 14px; line-height: 1.45; }
+.how-text p { margin: 0; }
+.how-title { margin: 0; font-size: 15px; font-weight: 600; }
+.how-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px; }

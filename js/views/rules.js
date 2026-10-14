@@ -37,12 +37,10 @@ export async function render(el, ctx, args, alive) {
   const { rules, api } = ctx;
   const isAdmin = ctx.me.role === 'admin';
   if (!isAdmin && !ctx.settings?.show_rules) {
-    el.innerHTML = String(html`<header class="stack-8"><p class="sub">Как считаются очки · меняет Тимур</p>
+    el.innerHTML = String(html`<header class="stack-8"><p class="sub">Точные цифры крутой генерал пока держит в секрете</p>
       <h1 class="h1">Правила</h1></header>
       <section class="card"><h2 class="h2">Как это работает</h2>
-      <p class="label">Точные числа Тимур пока не открыл, но в общих чертах так:</p>
-      <ul class="list">${howItWorks(ctx.rules?.current, { numbers: false })}</ul>
-      <a class="ghost link" href="#/goal">К цели</a></section>`);
+      ${howItWorks(ctx.rules?.current, { numbers: false })}</section>`);
     return;
   }
   // Список упражнений: всё, что не удалено. Новые строки получают id после сохранения.
@@ -57,7 +55,7 @@ export async function render(el, ctx, args, alive) {
 
   el.innerHTML = String(html`
     <header class="stack-8">
-      <p class="sub">${isAdmin ? 'Меняешь когда угодно — действует сразу' : 'Как считаются очки · меняет Тимур'}</p>
+      <p class="sub">${isAdmin ? 'Меняешь когда угодно — действует сразу' : 'Как считаются очки · меняет крутой генерал'}</p>
       <h1 class="h1">Правила</h1>
     </header>
 
@@ -74,8 +72,8 @@ export async function render(el, ctx, args, alive) {
 
     <section class="card">
       <h2 class="h2">Упражнения и очки</h2>
-      <p class="label">Только за подходы, которые подтвердил Тимур. Полный подход — где цель по повторам выполнена.
-        Бонус сверх цели — за каждый повтор больше цели, но за день по упражнению не больше потолка.
+      <p class="label">Очки идут за подходы, которые проверил генерал. «Полный подход» — когда добил цель по повторам.
+        «Сверх цели» — доплата за каждый лишний повтор, но за день по упражнению не больше потолка.
         ${isAdmin ? 'Отсюда упражнения попадают в «План».' : ''}</p>
       <div id="ex-rules"></div>
       ${isAdmin ? html`<button type="button" class="ghost" id="ex-new">+ Новое упражнение</button>` : ''}

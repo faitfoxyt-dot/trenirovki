@@ -71,7 +71,7 @@ export async function render(el, ctx, args, alive) {
 
     <section class="card">
       <div class="row"><h2 class="h2">Больничный</h2><span class="chip">бесплатно</span></div>
-      <p class="label">Если болит по-настоящему, а не крепатура. Тимур одобряет: очки не тратятся, серия не рвётся.</p>
+      <p class="label">Если болит по-настоящему, а не просто крепатура. Генерал одобрит: очки не тратятся, серия не ломается.</p>
       ${sickBlock(todaySick, todayTraining, isAdmin)}
     </section>
 
@@ -79,7 +79,7 @@ export async function render(el, ctx, args, alive) {
       <h2 class="h2">Идеи для магазина</h2>
       <p class="label">${isAdmin
         ? 'Что друг предлагает покупать за очки. Обсудите в Telegram; если идея подходит — отметь её принятой.'
-        : 'Предложи, что ещё можно было бы покупать за очки. Обсудите в Telegram, новый товар добавит Тимур.'}</p>
+        : 'Предложи, что ещё можно было бы покупать за очки. Обсудите в Telegram, новый товар добавит крутой генерал.'}</p>
       ${isAdmin ? '' : html`
         <label class="label" for="idea">Твоя идея</label>
         <textarea id="idea" class="input textarea" rows="3" maxlength="300" placeholder="Напиши идею"></textarea>
@@ -130,7 +130,7 @@ export async function render(el, ctx, args, alive) {
   el.querySelector('#ask-sick')?.addEventListener('click', async () => {
     try {
       await api.requestSick(el.querySelector('#sick-note').value);
-      ctx.toast('Запрос отправлен Тимуру');
+      ctx.toast('Запрос отправлен генералу');
       ctx.refresh();
     } catch (e) { ctx.toast(e.message); }
   });
@@ -163,7 +163,7 @@ export async function render(el, ctx, args, alive) {
 }
 
 function buyHint(r, price, balance, isAdmin) {
-  if (price === null) return 'Цену выходного Тимур ещё не поставил.';
+  if (price === null) return 'Цену выходного генерал ещё не поставил.';
   const parts = [];
   if (!isAdmin && balance < price) parts.push(`Не хватает ${POINTS(price - balance)}.`);
   parts.push('Купить можно только заранее, до начала дня. Отменить — тоже до начала дня, очки вернутся.');
@@ -175,13 +175,13 @@ function sickBlock(s, todayTraining, isAdmin) {
   if (s?.status === 'pending') {
     return isAdmin
       ? html`<p class="warn-strong">Друг просит больничный на сегодня${s.note ? `: «${s.note}»` : ''}. Решение — во вкладке «Проверка».</p>`
-      : html`<p class="ok strong">Запрос на сегодня отправлен Тимуру</p>`;
+      : html`<p class="ok strong">Запрос на сегодня отправлен генералу</p>`;
   }
-  if (s?.status === 'approved') return html`<p class="ok strong">Сегодня больничный: Тимур одобрил</p>`;
+  if (s?.status === 'approved') return html`<p class="ok strong">Сегодня больничный: генерал одобрил</p>`;
   if (isAdmin) return '';
   if (!todayTraining) return html`<p class="label">Сегодня нет тренировки — больничный не нужен.</p>`;
   return html`
-    ${s?.status === 'declined' ? html`<p class="warn-strong">Тимур отказал. Можно попросить ещё раз.</p>` : ''}
+    ${s?.status === 'declined' ? html`<p class="warn-strong">Генерал отказал. Можно попросить ещё раз.</p>` : ''}
     <label class="label" for="sick-note">Что болит</label>
     <input class="input" id="sick-note" type="text" maxlength="300" placeholder="Например: плечо">
     <button type="button" class="ghost" id="ask-sick">Попросить больничный на сегодня</button>`;

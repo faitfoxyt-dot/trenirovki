@@ -112,3 +112,11 @@ export function debounce(fn, ms) {
     t = setTimeout(() => fn(...args), ms);
   };
 }
+
+// Друг видит не «Тимур», а «крутой генерал». Строки из базы (история очков, ошибки) переводим здесь.
+export function general(text) {
+  if (!text) return text;
+  return String(text)
+    .replace(/Тимуром/g, 'генералом').replace(/Тимура/g, 'генерала').replace(/Тимуру/g, 'генералу')
+    .replace(/(^|[.!?]\s+)Тимур/g, '$1Генерал').replace(/Тимур/g, 'генерал');
+}
