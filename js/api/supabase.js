@@ -72,7 +72,7 @@ export const api = {
 
   async saveExercise(ex) {
     const row = {
-      name: ex.name, sets: ex.sets, target_reps: ex.target_reps,
+      name: ex.name, unit: ex.unit ?? 'reps', sets: ex.sets, target_reps: ex.target_reps,
       position: ex.position, active: ex.active, archived: ex.archived ?? false,
     };
     if (ex.id) return check(await sb.from('exercises').update(row).eq('id', ex.id).select().single());

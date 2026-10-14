@@ -70,9 +70,34 @@ export function caption(date, exerciseName, setNo) {
   return `${shortDate(date)} · ${exerciseName} · подход ${setNo}`;
 }
 
-export function goalText(ex) {
+// Единица упражнения: 'reps' — повторы, 'sec' — секунды (планка и т.п.).
+// Берём из каталога (там правда), иначе из снимка плана, иначе повторы.
+export function unitOf(ex, catalog) {
+  const id = ex?.id ?? ex?.exercise_id;
+  return catalog?.find((e) => e.id === id)?.unit ?? ex?.unit ?? 'reps';
+}
+export const isSec = (unit) => unit === 'sec';
+
+// Число с единицей: «12» для повторов, «45 с» или «1 мин 30 с» для секунд.
+export function amount(n, unit) {
+  if (n === null || n === undefined) return '—';
+  if (!isSec(unit) || n < 60) return isSec(unit) ? `${n} с` : `${n}`;
+  const m = Math.floor(n / 60);
+  const s = n % 60;
+  return s ? `${m} мин ${s} с` : `${m} мин`;
+}
+
+// Подписи под единицу.
+export const UNIT = {
+  reps: { what: 'повторы', many: 'повторов', one: 'повтор', input: 'повторы' },
+  sec: { what: 'секунды', many: 'секунд', one: 'секунду', input: 'секунды' },
+};
+export const unitText = (unit) => UNIT[unit] ?? UNIT.reps;
+
+export function goalText(ex, unit = ex?.unit ?? 'reps') {
   const sets = `${ex.sets} ${plural(ex.sets, 'подход', 'подхода', 'подходов')}`;
-  return ex.target_reps ? `${sets} · цель ${ex.target_reps}` : `${sets} · без цели`;
+  const tag = isSec(unit) ? ' · на время' : '';
+  return ex.target_reps ? `${sets} · цель ${amount(ex.target_reps, unit)}${tag}` : `${sets} · без цели${tag}`;
 }
 
 export function plural(n, one, few, many) {
@@ -85,13 +110,13 @@ export function plural(n, one, few, many) {
 }
 
 // Что видит атлет у подхода после проверки.
-export function reviewNote(log) {
+export function reviewNote(log, unit = 'reps') {
   if (!log || log.claimed === null || log.claimed === undefined) return '';
   if (log.review === 'pending') return 'На проверке';
   const pts = setPoints(log);
   const tail = pts === null ? '' : ` · ${signed(pts)}${multTag(log.mult)}`;
-  if (log.review === 'accepted') return `Принято: ${log.confirmed}${tail}`;
-  if (log.review === 'corrected') return `Исправлено: ${log.confirmed}${tail}`;
+  if (log.review === 'accepted') return `Принято: ${amount(log.confirmed, unit)}${tail}`;
+  if (log.review === 'corrected') return `Исправлено: ${amount(log.confirmed, unit)}${tail}`;
   return 'Отклонено';
 }
 

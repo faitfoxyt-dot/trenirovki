@@ -1,7 +1,7 @@
 // «Календарь»: месяц, цвет дня по статусу, тап — подробности дня.
 
 import { html, monthKey, shiftMonth, monthTitle, monthDays, isoDow, dayTitle, WD_SHORT } from '../util.js';
-import { DAY_STATE, DAY_STATUS, MUSCLES, REVIEW, effectiveStatus, dayState, dayCounts, setPoints, signed, multTag } from '../logic.js';
+import { DAY_STATE, DAY_STATUS, MUSCLES, REVIEW, effectiveStatus, dayState, dayCounts, setPoints, signed, multTag, amount, unitOf } from '../logic.js';
 
 const LEGEND = ['confirmed', 'pending', 'missed', 'sick', 'rest', 'bought', 'busy', 'planned'];
 
@@ -103,6 +103,7 @@ function cellClass(d, today, sel) {
 function detailHtml(d, clock, exercises, showTheory) {
   const plan = d.row?.plan ?? [];
   const name = (id) => (plan.find((e) => e.id === id) ?? exercises.find((e) => e.id === id))?.name ?? 'Упражнение';
+  const unit = (id) => unitOf(plan.find((e) => e.id === id) ?? { id }, exercises);
   const isPast = d.date <= clock.today;
   const sorted = d.logs.slice().sort((a, b) => a.exercise_id - b.exercise_id || a.set_no - b.set_no);
   const theoryDay = [...d.theory.values()].reduce((a, t) => a + t.points, 0);
@@ -127,7 +128,7 @@ function detailHtml(d, clock, exercises, showTheory) {
       ${sorted.map((l) => html`<li>
         <div class="row"><span>${name(l.exercise_id)} · подход ${l.set_no}</span>
           <span class="review review-${l.review}">${REVIEW[l.review]}${pts(l)}</span></div>
-        <p class="label">Заявлено: ${l.claimed ?? '—'}${l.review !== 'pending' ? ` · подтверждено: ${l.confirmed}` : ''}
+        <p class="label">Заявлено: ${amount(l.claimed, unit(l.exercise_id))}${l.review !== 'pending' ? ` · подтверждено: ${amount(l.confirmed, unit(l.exercise_id))}` : ''}
           · видео ${l.has_video ? 'есть' : 'нет'}</p>
         ${l.comment ? html`<p class="label comment">Генерал: ${l.comment}</p>` : ''}
       </li>`)}

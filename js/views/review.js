@@ -2,7 +2,7 @@
 // отклонить, комментарий. Очки за подход база считает в момент решения.
 
 import { html, dayTitle } from '../util.js';
-import { MUSCLES, caption, setPoints, signed, multTag } from '../logic.js';
+import { MUSCLES, caption, setPoints, signed, multTag, amount, unitOf, unitText } from '../logic.js';
 
 const DECISIONS = [
   { key: 'accepted', label: 'Принять' },
@@ -11,8 +11,8 @@ const DECISIONS = [
 ];
 
 const SAVED_TEXT = {
-  accepted: (l) => `Принято: ${l.confirmed}${pointsTail(l)}`,
-  corrected: (l) => `Исправлено: ${l.confirmed}${pointsTail(l)}`,
+  accepted: (l, unit) => `Принято: ${amount(l.confirmed, unit)}${pointsTail(l)}`,
+  corrected: (l, unit) => `Исправлено: ${amount(l.confirmed, unit)}${pointsTail(l)}`,
   rejected: (l) => `Отклонено${pointsTail(l)}`,
 };
 
@@ -33,6 +33,7 @@ export async function render(el, ctx, args, alive) {
   if (!alive()) return;
 
   const exName = (id) => exercises.find((e) => e.id === id)?.name ?? 'Упражнение';
+  const exUnit = (id) => unitOf({ id }, exercises);
   const athleteName = (id) => ctx.athletes.find((a) => a.id === id)?.name ?? '';
   const many = ctx.athletes.length > 1;
   const morning = mornings[0];
@@ -69,11 +70,11 @@ export async function render(el, ctx, args, alive) {
       <h2 class="h2">${dayTitle(g.date)}${many ? html` · <span class="label">${athleteName(g.athlete)}</span>` : ''}</h2>
       ${g.logs.length > 1 ? html`<button type="button" class="ghost" data-accept-day="${g.key}">Принять всё за день</button>` : ''}
     </div>
-    ${g.logs.map((l) => html`<section class="card review-card" data-id="${l.id}" data-group="${g.key}">
+    ${g.logs.map((l) => html`<section class="card review-card" data-id="${l.id}" data-group="${g.key}" data-unit="${exUnit(l.exercise_id)}">
       <h2 class="h2">${exName(l.exercise_id)} · подход ${l.set_no}</h2>
-      <p class="label">Заявлено: <b class="em">${l.claimed}</b> · видео ${l.has_video ? 'есть' : html`<span class="bad">нет</span>`}<br>
+      <p class="label">Заявлено: <b class="em">${amount(l.claimed, exUnit(l.exercise_id))}</b> · видео ${l.has_video ? 'есть' : html`<span class="bad">нет</span>`}<br>
         Подпись в Telegram: ${caption(l.date, exName(l.exercise_id), l.set_no)}</p>
-      <div class="review-form">${formHtml(l)}</div>
+      <div class="review-form">${formHtml(l, null, exUnit(l.exercise_id))}</div>
     </section>`)}`) : html`<section class="card"><h2 class="h2">Всё проверено</h2>
       <p class="label">Новые подходы появятся здесь, как только друг их отметит.</p></section>`}
     <section class="card">
@@ -116,14 +117,14 @@ export async function render(el, ctx, args, alive) {
   }));
 }
 
-function formHtml(l, decision = null) {
+function formHtml(l, decision = null, unit = 'reps') {
   return html`
     <div class="seg" role="group" aria-label="Решение">
       ${DECISIONS.map((d) => html`<button type="button" class="pill ${decision === d.key ? 'pill-on' : ''}"
         data-decision="${d.key}" aria-pressed="${decision === d.key}">${d.label}</button>`)}
     </div>
     <div class="fix" ${decision === 'corrected' ? '' : html`hidden`}>
-      <label class="label" for="fix-${l.id}">Подтверждено, повторов</label>
+      <label class="label" for="fix-${l.id}">Подтверждено, ${unitText(unit).many}</label>
       <input class="input" id="fix-${l.id}" type="number" inputmode="numeric" pattern="[0-9]*" min="0" max="1000" placeholder="твоё число">
     </div>
     <label class="label" for="cm-${l.id}">Комментарий</label>
@@ -147,13 +148,13 @@ function wire(card, log, ctx, onCount) {
       const t = (await ctx.api.theory(log.athlete_id, log.date, log.date)).find((x) => x.set_id === log.id);
       if (t) theory = ` · в теории ${signed(t.points)}${multTag(t.mult)}`;
     }
-    box.innerHTML = String(html`<p class="saved ${saved.review}">${SAVED_TEXT[saved.review](saved)}${theory}${saved.comment ? html` · ${saved.comment}` : ''}</p>
+    box.innerHTML = String(html`<p class="saved ${saved.review}">${SAVED_TEXT[saved.review](saved, card.dataset.unit)}${theory}${saved.comment ? html` · ${saved.comment}` : ''}</p>
       <button type="button" class="ghost again">Изменить решение</button>`);
     box.querySelector('.again').addEventListener('click', () => {
       onCount(1);
       done = false;
       decision = null;
-      box.innerHTML = String(formHtml(log));
+      box.innerHTML = String(formHtml(log, null, card.dataset.unit));
       bind();
     });
   };
@@ -175,7 +176,7 @@ function wire(card, log, ctx, onCount) {
       const fixVal = box.querySelector(`#fix-${log.id}`).value;
       const confirmed = decision === 'corrected' ? Number(fixVal) : null;
       if (decision === 'corrected' && (fixVal === '' || !Number.isInteger(confirmed) || confirmed < 0)) {
-        err.textContent = 'Впиши подтверждённое число повторов';
+        err.textContent = 'Впиши подтверждённое число';
         return;
       }
       const comment = box.querySelector(`#cm-${log.id}`).value;
