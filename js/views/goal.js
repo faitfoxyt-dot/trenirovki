@@ -4,6 +4,11 @@ import { html, dayTitle } from '../util.js';
 import { POINTS, signed, isCalibration } from '../logic.js';
 
 const MILESTONES = [25, 50, 75];
+const MODES = [
+  { k: 'add', label: 'Добавить', field: 'Сколько добавить' },
+  { k: 'take', label: 'Снять', field: 'Сколько снять' },
+  { k: 'set', label: 'Ровно', field: 'Баланс станет' },
+];
 
 export async function render(el, ctx, args, alive) {
   const { api, me } = ctx;
@@ -29,7 +34,13 @@ export async function render(el, ctx, args, alive) {
       ${isCalibration(r) ? html`<div class="chips"><span class="chip">Тестовый период · очки не начисляются</span></div>` : ''}
     </header>
 
-    <section class="card">
+    ${w.phone_bought ? html`<section class="card phone-done">
+      <span class="phone-done-ic" aria-hidden="true">🏆</span>
+      <h2 class="h2">Телефон куплен!</h2>
+      <p class="label">${dayTitle(w.phone_bought)} · цель выполнена. ${isAdmin ? 'Отменить покупку можно крестиком в истории.' : 'Красава, так держать.'}</p>
+    </section>` : ''}
+
+    <section class="card ${w.phone_bought ? 'hidden-card' : ''}">
       <div class="row"><h2 class="h2">Телефон</h2><span class="label">${price ? `${pct}%` : ''}</span></div>
       <p class="big-line"><span class="big">${w.balance}</span>
         <span class="label">${price ? `из ${price} очков` : 'цена телефона ещё не задана'}</span></p>
@@ -43,14 +54,35 @@ export async function render(el, ctx, args, alive) {
       </div>
       <p class="label">${left === null ? '' : left > 0 ? `Осталось ${POINTS(left)}. ` : 'Очков хватает на телефон! '}Путь считается
         по балансу: каждый купленный выходной и каждый штраф отодвигают телефон.</p>
+      ${price ? phoneButton(w, pct, left, isAdmin) : ''}
     </section>
 
     <div class="tiles">
       <div class="tile"><span class="big">${w.balance}</span><span class="label">Баланс</span></div>
       <div class="tile"><span class="big">${w.rating}</span><span class="label">Рейтинг</span></div>
       <div class="tile"><span class="big">${w.streak}</span>
-        <span class="label">Серия, дней${w.mult > 1 ? html` · <b class="ok">×${w.mult}</b>` : ''}</span></div>
+        <span class="label">Серия${w.mult > 1 ? html` <b class="ok">×${w.mult}</b>` : ''}</span></div>
     </div>
+
+    ${isAdmin ? html`<section class="card" id="manual">
+      <h2 class="h2">Очки вручную</h2>
+      ${w.theory ? html`<p class="label">Теоретически за тестовый период: <b class="em">${POINTS(w.theory)}</b> по текущим числам правил.
+        Это видишь только ты — можешь начислить их или часть.</p>` : ''}
+      <div class="seg" role="group" aria-label="Что сделать">
+        ${MODES.map((m) => html`<button type="button" class="pill ${m.k === 'add' ? 'pill-on' : ''}" data-mode="${m.k}"
+          aria-pressed="${m.k === 'add'}">${m.label}</button>`)}
+      </div>
+      <div class="grid-2">
+        <div class="field"><label class="label" for="grant-amount" id="grant-amount-label">Сколько очков</label>
+          <input class="input" id="grant-amount" type="number" inputmode="numeric" min="0" step="1" placeholder="например 50"></div>
+        <div class="field"><label class="label" for="grant-note">Причина</label>
+          <input class="input" id="grant-note" type="text" maxlength="200" placeholder="за что"></div>
+      </div>
+      <label class="check check-wide"><input type="checkbox" id="grant-rating" checked><span>Менять и рейтинг</span></label>
+      <p class="label" id="grant-preview" aria-live="polite"></p>
+      <p class="error" id="grant-error" role="alert"></p>
+      <button type="button" class="btn" id="grant">Записать</button>
+    </section>` : ''}
 
     <section class="card">
       <h2 class="h2">История</h2>
@@ -64,20 +96,6 @@ export async function render(el, ctx, args, alive) {
       ${!isAdmin && ctx.settings?.show_rules ? html`<a class="ghost link" href="#/rules">Все числа правил →</a>` : ''}
     </section>
 
-    ${isAdmin ? html`<section class="card">
-      <h2 class="h2">Начислить или снять очки</h2>
-      ${w.theory ? html`<p class="label">Теоретически за тестовый период: <b class="em">${POINTS(w.theory)}</b> по текущим числам правил.
-        Это видишь только ты — можешь начислить их или часть вручную.</p>` : ''}
-      <div class="grid-2">
-        <div class="field"><label class="label" for="grant-amount">Очки (минус — снять)</label>
-          <input class="input" id="grant-amount" type="number" inputmode="numeric" step="1" placeholder="например 50"></div>
-        <div class="field"><label class="label" for="grant-note">Причина</label>
-          <input class="input" id="grant-note" type="text" maxlength="200" placeholder="за что"></div>
-      </div>
-      <p class="error" id="grant-error" role="alert"></p>
-      <button type="button" class="btn" id="grant">Записать</button>
-      <p class="label">Плюс идёт в баланс и рейтинг, минус — только из баланса, ниже нуля не уходит.</p>
-    </section>` : ''}
   `);
 
   el.querySelectorAll('[data-led]').forEach((b) => b.addEventListener('click', async () => {
@@ -89,18 +107,100 @@ export async function render(el, ctx, args, alive) {
     } catch (e) { ctx.toast(e.message); }
   }));
 
-  el.querySelector('#grant')?.addEventListener('click', async () => {
-    const amount = Number(el.querySelector('#grant-amount').value);
-    const note = el.querySelector('#grant-note').value.trim();
-    const err = el.querySelector('#grant-error');
-    if (!Number.isInteger(amount) || amount === 0) { err.textContent = 'Впиши целое число, не ноль'; return; }
-    if (!note) { err.textContent = 'Напиши причину'; return; }
+  el.querySelector('#buy-phone')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    if (!confirm(`Купить телефон за ${POINTS(w.phone_price)}? Очки спишутся с баланса.`)) return;
+    btn.disabled = true;
     try {
-      await api.grantPoints(athleteId, amount, note);
-      ctx.toast(`${signed(amount)} записано`);
-      ctx.refresh();
-    } catch (e) { err.textContent = e.message; }
+      await api.buyPhone();
+      confetti();
+      ctx.toast('Телефон куплен! 🎉');
+      setTimeout(() => ctx.refresh(), 1600);
+    } catch (x) { ctx.toast(x.message); btn.disabled = false; }
   });
+
+  // Очки вручную: добавить, снять или выставить баланс ровно; рейтинг — по галочке.
+  const box = el.querySelector('#manual');
+  if (box) {
+    let mode = 'add';
+    const amountIn = box.querySelector('#grant-amount');
+    const ratingIn = box.querySelector('#grant-rating');
+    const delta = () => {
+      const v = Number(amountIn.value);
+      if (amountIn.value === '' || !Number.isInteger(v) || v < 0) return null;
+      return mode === 'add' ? v : mode === 'take' ? -v : v - w.balance;
+    };
+    const preview = () => {
+      const d = delta();
+      const out = box.querySelector('#grant-preview');
+      if (d === null || d === 0) { out.textContent = ''; return; }
+      const bal = Math.max(0, w.balance + d);
+      const rat = ratingIn.checked ? Math.max(0, w.rating + d) : w.rating;
+      out.textContent = `Баланс: ${w.balance} → ${bal} · Рейтинг: ${w.rating} → ${rat}`;
+    };
+    box.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => {
+      mode = b.dataset.mode;
+      box.querySelectorAll('[data-mode]').forEach((x) => {
+        x.classList.toggle('pill-on', x === b);
+        x.setAttribute('aria-pressed', String(x === b));
+      });
+      box.querySelector('#grant-amount-label').textContent = MODES.find((m) => m.k === mode).field;
+      ratingIn.checked = mode === 'add';
+      preview();
+    }));
+    amountIn.addEventListener('input', preview);
+    ratingIn.addEventListener('change', preview);
+    box.querySelector('#grant').addEventListener('click', async () => {
+      const d = delta();
+      const note = box.querySelector('#grant-note').value.trim();
+      const err = box.querySelector('#grant-error');
+      if (d === null) { err.textContent = 'Впиши целое число не меньше нуля'; return; }
+      if (d === 0) { err.textContent = mode === 'set' ? 'Баланс уже такой' : 'Впиши число больше нуля'; return; }
+      if (!note) { err.textContent = 'Напиши причину'; return; }
+      err.textContent = '';
+      try {
+        await api.grantPoints(athleteId, d, note, ratingIn.checked);
+        ctx.toast(`${signed(d)} записано`);
+        ctx.refresh();
+      } catch (e) { err.textContent = e.message; }
+    });
+  }
+}
+
+// Кнопка покупки: заливка показывает путь, при 100% — блеск и пульс.
+export function phoneButton(w, pct, left, isAdmin) {
+  const ready = left === 0;
+  if (isAdmin) {
+    return html`<p class="label">${ready ? 'Очков хватает — друг может купить телефон кнопкой у себя.' : 'Кнопку «Купить телефон» друг нажмёт сам, когда хватит очков.'}</p>`;
+  }
+  return html`<button type="button" class="phone-btn ${ready ? 'phone-ready' : ''}" id="buy-phone" ${ready ? '' : html`disabled`}
+    style="--p: ${pct}%">
+    <span class="phone-fill" aria-hidden="true"></span>
+    <span class="phone-text">
+      <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg>
+      <span class="phone-lines"><span>Купить телефон</span>
+        <small>${ready ? `за ${POINTS(w.phone_price)}` : `ещё ${POINTS(left)}`}</small></span>
+    </span>
+  </button>`;
+}
+
+// Салют из цветных частиц поверх экрана, сам исчезает.
+export function confetti() {
+  const layer = document.createElement('div');
+  layer.className = 'confetti';
+  layer.setAttribute('aria-hidden', 'true');
+  const colors = ['#C6F432', '#E2FF7A', '#FFB547', '#FF8A3D', '#EDEEF0'];
+  for (let i = 0; i < 80; i += 1) {
+    const p = document.createElement('i');
+    p.style.left = `${Math.random() * 100}%`;
+    p.style.background = colors[i % colors.length];
+    p.style.animationDelay = `${Math.random() * 0.4}s`;
+    p.style.setProperty('--x', `${(Math.random() - 0.5) * 160}px`);
+    p.style.setProperty('--r', `${Math.random() * 720 - 360}deg`);
+    layer.append(p);
+  }
+  document.body.append(layer);
+  setTimeout(() => layer.remove(), 2600);
 }
 
 // Подходы одного дня — одной строкой, подробности под «Подробнее».

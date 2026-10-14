@@ -240,7 +240,7 @@ function setStatus(a, date, status) {
   return d;
 }
 
-// ── История для демо: калибровка, потом 2 недели с очками ──
+// ── История для демо: тестовая неделя, потом 2 недели с очками ──
 
 (function seed() {
   const T = tallinnNow().today;
@@ -300,7 +300,7 @@ function setStatus(a, date, status) {
     }
   }
   frozen = null;
-  // Теория для калибровочной недели — как пересчёт в save_rules.
+  // Теория для тестовой недели — как пересчёт в save_rules.
   db.logs.filter((l) => isCal(rulesFor(l.date))).forEach(awardSet);
   if (dayStatusOf(a, T) !== 'training') putStatus(a, T, 'training');
   ensureDay(a, T).note = 'Подтягивания — медленный негатив, 3 секунды вниз';
@@ -458,7 +458,9 @@ export const api = {
     const r = rulesFor(today());
     const s = streakAt(a, today());
     const theory = current.role === 'admin' ? db.theory.filter((x) => x.athlete_id === a).reduce((n, x) => n + x.points, 0) : null;
-    return { balance: balance(a), rating: rating(a), streak: s, mult: streakMult(r, s), phone_price: r?.phone_price ?? null, theory };
+    const phone = db.ledger.find((x) => x.athlete_id === a && x.key === 'phone');
+    return { balance: balance(a), rating: rating(a), streak: s, mult: streakMult(r, s), phone_price: r?.phone_price ?? null,
+      phone_bought: phone?.date ?? null, theory };
   },
 
   async ledger(a, limit = 60) {
@@ -562,12 +564,12 @@ export const api = {
     return clone(d);
   },
 
-  async grantPoints(a, amount, note) {
+  async grantPoints(a, amount, note, withRating) {
     needAdmin();
     if (!amount) fail('Укажи число очков');
     if (!note || !note.trim()) fail('Напиши причину');
-    const row = { athlete_id: a, date: today(), kind: 'manual', amount: Math.max(amount, -balance(a)), rating: Math.max(amount, 0),
-      note: `Тимур: ${note.trim()}` };
+    const row = { athlete_id: a, date: today(), kind: 'manual', amount: Math.max(amount, -balance(a)),
+      rating: withRating ? Math.max(amount, -rating(a)) : 0, note: `Тимур: ${note.trim()}` };
     addLedger(row);
     settle(a);
     return clone(row);
@@ -627,7 +629,7 @@ export const api = {
   async deleteLedger(id) {
     needAdmin();
     const x = db.ledger.find((r) => r.id === id) ?? fail('Запись не найдена');
-    if (x.key) {
+    if (x.key && x.key !== 'phone') {
       x.amount = 0;
       x.rating = 0;
       if (!x.note?.startsWith('Удалено Тимуром: ')) x.note = `Удалено Тимуром: ${x.note ?? ''}`;
@@ -636,5 +638,18 @@ export const api = {
     const l = x.set_id && db.logs.find((s) => s.id === x.set_id);
     if (l) { l.points = null; l.bonus = null; }
     db.ledger = db.ledger.filter((r) => r.id !== id);
+  },
+
+  // ── v3.3 ──
+
+  async buyPhone() {
+    needAthlete();
+    const a = current.id;
+    const price = rulesFor(today())?.phone_price ?? fail('Цену телефона Тимур ещё не поставил');
+    if (hasKey(a, 'phone')) fail('Телефон уже куплен');
+    if (balance(a) < price) fail(`Не хватает очков: нужно ${price}, на балансе ${balance(a)}`);
+    const row = { athlete_id: a, date: today(), kind: 'purchase', amount: -price, note: 'Покупка: телефон', key: 'phone' };
+    addLedger(row);
+    return clone(row);
   },
 };

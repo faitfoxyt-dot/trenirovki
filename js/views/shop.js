@@ -3,6 +3,7 @@
 
 import { html, dayTitle, addDays } from '../util.js';
 import { POINTS, effectiveStatus } from '../logic.js';
+import { phoneButton, confetti } from './goal.js';
 
 const IDEA = { new: 'на рассмотрении', accepted: 'принята', declined: 'отклонена' };
 const AHEAD = 14; // на сколько дней вперёд можно выбрать выходной
@@ -41,6 +42,12 @@ export async function render(el, ctx, args, alive) {
       <h1 class="h1">Магазин</h1>
     </header>
 
+    ${w.phone_price ? html`<section class="card">
+      <div class="row"><h2 class="h2">Телефон</h2><span class="chip">${POINTS(w.phone_price)}</span></div>
+      ${w.phone_bought ? html`<p class="ok strong">Куплен ${dayTitle(w.phone_bought)} 🏆</p>`
+        : phoneButton(w, Math.min(100, Math.floor((w.balance * 100) / w.phone_price)), Math.max(0, w.phone_price - w.balance), isAdmin)}
+    </section>` : ''}
+
     <section class="card">
       <div class="row"><h2 class="h2">Выходной</h2><span class="chip">${price !== null ? POINTS(price) : 'цена не задана'}</span></div>
       <p class="label">Отдых вместо тренировки. Серию не рвёт и не продлевает, но тратит баланс — телефон отодвигается.</p>
@@ -64,7 +71,7 @@ export async function render(el, ctx, args, alive) {
 
     <section class="card">
       <div class="row"><h2 class="h2">Больничный</h2><span class="chip">бесплатно</span></div>
-      <p class="label">Если болит — не крепатура. Тимур одобряет, очки не тратятся, серия не рвётся.</p>
+      <p class="label">Если болит по-настоящему, а не крепатура. Тимур одобряет: очки не тратятся, серия не рвётся.</p>
       ${sickBlock(todaySick, todayTraining, isAdmin)}
     </section>
 
@@ -88,6 +95,18 @@ export async function render(el, ctx, args, alive) {
       </div>`) : html`<p class="label">Идей пока нет.</p>`}
     </section>
   `);
+
+  el.querySelector('#buy-phone')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    if (!confirm(`Купить телефон за ${POINTS(w.phone_price)}? Очки спишутся с баланса.`)) return;
+    btn.disabled = true;
+    try {
+      await api.buyPhone();
+      confetti();
+      ctx.toast('Телефон куплен! 🎉');
+      setTimeout(() => ctx.refresh(), 1600);
+    } catch (x) { ctx.toast(x.message); btn.disabled = false; }
+  });
 
   el.querySelector('#buy')?.addEventListener('click', async () => {
     const date = el.querySelector('#buy-day').value;
@@ -164,6 +183,6 @@ function sickBlock(s, todayTraining, isAdmin) {
   return html`
     ${s?.status === 'declined' ? html`<p class="warn-strong">Тимур отказал. Можно попросить ещё раз.</p>` : ''}
     <label class="label" for="sick-note">Что болит</label>
-    <input class="input" id="sick-note" type="text" maxlength="300" placeholder="Например: плечо после подтягиваний">
+    <input class="input" id="sick-note" type="text" maxlength="300" placeholder="Например: плечо">
     <button type="button" class="ghost" id="ask-sick">Попросить больничный на сегодня</button>`;
 }
