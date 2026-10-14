@@ -4,7 +4,8 @@
 # Файлы до 0008 включительно Тимур выполнял руками — они только отмечаются, без запуска.
 # Строка подключения — только из секрета SUPABASE_DB_URL, в коде её нет.
 set -euo pipefail
-: "${SUPABASE_DB_URL:?Нет секрета SUPABASE_DB_URL}"
+# Без секрета ничего не делаем: значит, SQL выполняют вручную или через подключённый Supabase.
+if [ -z "${SUPABASE_DB_URL:-}" ]; then echo "Секрета SUPABASE_DB_URL нет — пропускаю"; exit 0; fi
 dir="${1:-supabase/migrations}"
 baseline="0008"
 run() { psql "$SUPABASE_DB_URL" -X -q -v ON_ERROR_STOP=1 "$@"; }
