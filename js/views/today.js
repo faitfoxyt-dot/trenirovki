@@ -2,7 +2,7 @@
 // из календаря, а админу показывает день друга без возможности править.
 
 import { html, dayTitle, addDays, shortDate, debounce } from '../util.js';
-import { MUSCLES, DAY_STATUS, caption, goalText, reviewNote, dayMode } from '../logic.js';
+import { MUSCLES, DAY_STATUS, caption, goalText, reviewNote, dayMode, isCalibration } from '../logic.js';
 
 export async function render(el, ctx, args, alive) {
   const { api, clock, settings, me } = ctx;
@@ -20,10 +20,11 @@ export async function render(el, ctx, args, alive) {
     return;
   }
 
-  const [day, logs, mornings] = await Promise.all([
+  const [day, logs, mornings, sick] = await Promise.all([
     api.openDay(date, isAdmin ? athleteId : undefined),
     api.logs(athleteId, date, date),
     api.mornings(athleteId, date, date),
+    date === clock.today ? api.sickRequests(athleteId, date) : [],
   ]);
   if (!alive()) return;
 
@@ -32,6 +33,8 @@ export async function render(el, ctx, args, alive) {
   const state = {
     morning: mornings[0] ?? { muscles: null, energy: null, note: null },
     logs: new Map(logs.map((l) => [`${l.exercise_id}-${l.set_no}`, l])),
+    sick: sick.find((s) => s.date === date) ?? null,
+    training: status === 'training',
   };
   const isToday = date === clock.today;
   const beforeStart = settings.start_date && date < settings.start_date;
@@ -44,7 +47,7 @@ export async function render(el, ctx, args, alive) {
       <h1 class="h1">${isToday ? 'Сегодня' : dayTitle(date)}</h1>
       <div class="chips">
         ${isAdmin && isToday ? html`<span class="chip">${dayTitle(date)}</span>` : ''}
-        ${settings.calibration ? html`<span class="chip">Калибровочная неделя · очки не начисляются</span>` : ''}
+        ${isCalibration(ctx.rules?.current) ? html`<span class="chip">Калибровка · очки не начисляются</span>` : ''}
         ${beforeStart ? html`<span class="chip chip-warn">Старт калибровки ${shortDate(settings.start_date)}</span>` : ''}
       </div>
     </header>
@@ -186,6 +189,16 @@ async function copy(text) {
 
 // ── Утро ──
 
+function sickHtml(state, editable) {
+  const s = state.sick;
+  if (s?.status === 'pending') return html`<p class="warn-strong">Запрос отправлен Тимуру</p>`;
+  if (s?.status === 'approved') return html`<p class="warn-strong">Тимур одобрил больничный</p>`;
+  const btn = editable && state.training
+    ? html`<button type="button" class="ghost ghost-bad" id="ask-sick">Попросить больничный</button>` : '';
+  if (s?.status === 'declined') return html`<p class="warn-strong">Тимур отказал. Можно попросить ещё раз.</p>${btn}`;
+  return btn;
+}
+
 function renderMorning(el, ctx, state, editable) {
   const m = state.morning;
   const done = m.muscles && m.energy;
@@ -205,10 +218,20 @@ function renderMorning(el, ctx, state, editable) {
       <input class="input" id="morning-note" type="text" maxlength="500" value="${m.note ?? ''}" placeholder="Например: плохо спал">`
       : m.note ? html`<p class="label">Заметка: ${m.note}</p>` : ''}
     ${m.muscles === 'pain' ? html`<div class="warn-box">
-      <p>Боль — это не крепатура. Не тренируйся через боль и напиши Тимуру: он может поставить больничный.</p>
+      <p>Боль — это не крепатура. Можно попросить больничный: очки не тратятся, серия не рвётся.</p>
+      ${sickHtml(state, editable)}
     </div>` : ''}
   `);
   if (!editable) return;
+
+  el.querySelector('#ask-sick')?.addEventListener('click', async () => {
+    try {
+      state.sick = await ctx.api.requestSick(m.note);
+      renderMorning(el, ctx, state, editable);
+    } catch (err) {
+      ctx.toast(err.message);
+    }
+  });
 
   const save = async (patch) => {
     try {

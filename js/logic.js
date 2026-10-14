@@ -75,10 +75,29 @@ export function plural(n, one, few, many) {
 export function reviewNote(log) {
   if (!log || log.claimed === null || log.claimed === undefined) return '';
   if (log.review === 'pending') return 'На проверке';
-  if (log.review === 'accepted') return `Принято: ${log.confirmed}`;
-  if (log.review === 'corrected') return `Исправлено: ${log.confirmed}`;
+  const pts = setPoints(log);
+  const tail = pts === null ? '' : ` · ${signed(pts)}`;
+  if (log.review === 'accepted') return `Принято: ${log.confirmed}${tail}`;
+  if (log.review === 'corrected') return `Исправлено: ${log.confirmed}${tail}`;
   return 'Отклонено';
 }
+
+// Очки за подход вместе с бонусом сверх цели; null — очки не считались (калибровка, не проверен).
+export function setPoints(log) {
+  if (log?.points === null || log?.points === undefined) return null;
+  return log.points + (log.bonus ?? 0);
+}
+
+export function signed(n) {
+  return n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '0';
+}
+
+// Правила: null или calibration = очки не начисляются.
+export function isCalibration(rules) {
+  return !rules || rules.calibration !== false;
+}
+
+export const POINTS = (n) => `${n} ${plural(n, 'очко', 'очка', 'очков')}`;
 
 // Режим дня для атлета: можно всё, только видео, или только смотреть.
 export function dayMode({ date, clock, startDate, status }) {

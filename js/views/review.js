@@ -1,8 +1,8 @@
-// «Проверка» (админ): очередь подходов — принять, исправить, отклонить, комментарий.
-// Очки появятся в v3; сейчас решение только фиксирует подтверждённое число.
+// «Проверка» (админ): запросы на больничный и очередь подходов — принять, исправить,
+// отклонить, комментарий. Очки за подход база считает в момент решения.
 
 import { html, dayTitle } from '../util.js';
-import { MUSCLES, caption } from '../logic.js';
+import { MUSCLES, caption, setPoints, signed } from '../logic.js';
 
 const DECISIONS = [
   { key: 'accepted', label: 'Принять' },
@@ -11,17 +11,24 @@ const DECISIONS = [
 ];
 
 const SAVED_TEXT = {
-  accepted: (l) => `Принято: ${l.confirmed}`,
-  corrected: (l) => `Исправлено: ${l.confirmed}`,
-  rejected: () => 'Отклонено',
+  accepted: (l) => `Принято: ${l.confirmed}${pointsTail(l)}`,
+  corrected: (l) => `Исправлено: ${l.confirmed}${pointsTail(l)}`,
+  rejected: (l) => `Отклонено${pointsTail(l)}`,
 };
+
+function pointsTail(l) {
+  const p = setPoints(l);
+  return p === null ? '' : ` · ${signed(p)}`;
+}
 
 export async function render(el, ctx, args, alive) {
   const { api, clock } = ctx;
-  const [pending, exercises, mornings] = await Promise.all([
+  const [pending, exercises, mornings, sick, ideas] = await Promise.all([
     api.pendingLogs(),
     api.exercises(),
     ctx.athleteId ? api.mornings(ctx.athleteId, clock.today, clock.today) : [],
+    api.pendingSick(),
+    ctx.athleteId ? api.ideas(ctx.athleteId) : [],
   ]);
   if (!alive()) return;
 
@@ -29,6 +36,7 @@ export async function render(el, ctx, args, alive) {
   const athleteName = (id) => ctx.athletes.find((a) => a.id === id)?.name ?? '';
   const many = ctx.athletes.length > 1;
   const morning = mornings[0];
+  const newIdeas = ideas.filter((i) => i.status === 'new').length;
 
   el.innerHTML = String(html`
     <header class="stack-8">
@@ -36,6 +44,17 @@ export async function render(el, ctx, args, alive) {
       <h1 class="h1">Проверка</h1>
       <div class="chips"><span class="chip" id="pending-count">Ждут проверки: ${pending.length}</span></div>
     </header>
+    ${sick.map((s) => html`<section class="card sick-card" data-sick="${s.id}">
+      <div class="row"><span class="chip chip-bad">Больничный</span>${many ? html`<span class="label">${athleteName(s.athlete_id)}</span>` : ''}</div>
+      <h2 class="h2">Просит больничный на ${dayTitle(s.date)}</h2>
+      ${s.note ? html`<p class="label">«${s.note}»</p>` : ''}
+      <p class="label">Одобришь — день станет «больничный»: очки не тратятся, серия не рвётся, штраф за пропуск снимется.</p>
+      <div class="seg">
+        <button type="button" class="pill" data-approve="1">Одобрить</button>
+        <button type="button" class="pill" data-approve="0">Отказать</button>
+      </div>
+    </section>`)}
+    ${newIdeas ? html`<a class="notice" href="#/shop">Новые идеи для магазина: ${newIdeas} →</a>` : ''}
     ${pending.length ? pending.map((l) => html`<section class="card review-card" data-id="${l.id}">
       <div class="row"><span class="chip">${dayTitle(l.date)}</span>${many ? html`<span class="label">${athleteName(l.athlete_id)}</span>` : ''}</div>
       <h2 class="h2">${exName(l.exercise_id)} · подход ${l.set_no}</h2>
@@ -49,9 +68,20 @@ export async function render(el, ctx, args, alive) {
       <p class="label">${morning
         ? html`Мышцы: ${MUSCLES.find((m) => m.key === morning.muscles)?.label ?? '—'} · Энергия: ${morning.energy ?? '—'}${morning.note ? html`<br>«${morning.note}»` : ''}`
         : 'Сегодня ещё не заполнил.'}</p>
-      ${morning?.muscles === 'pain' ? html`<p class="label bad">Отметил боль. Больничный можно поставить в «Плане» → «Изменить один день».</p>` : ''}
+      ${morning?.muscles === 'pain' ? html`<p class="label bad">Отмечена боль. Если друг попросит больничный, запрос появится здесь.</p>` : ''}
     </section>
   `);
+
+  el.querySelectorAll('.sick-card').forEach((card) => {
+    card.querySelectorAll('[data-approve]').forEach((b) => b.addEventListener('click', async () => {
+      const approve = b.dataset.approve === '1';
+      try {
+        await api.decideSick(Number(card.dataset.sick), approve);
+        card.innerHTML = String(html`<p class="saved ${approve ? 'accepted' : 'rejected'}">
+          ${approve ? 'Больничный одобрен' : 'В больничном отказано'}</p>`);
+      } catch (e) { ctx.toast(e.message); }
+    }));
+  });
 
   let left = pending.length;
   el.querySelectorAll('.review-card').forEach((card) => {

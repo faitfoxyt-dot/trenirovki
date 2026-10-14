@@ -214,6 +214,62 @@ input[type=date].input { display: block; padding-top: 10px; padding-bottom: 10px
 .hidden-ex summary { cursor: pointer; min-height: 32px; display: flex; align-items: center; }
 .hidden-ex .row { padding-top: 8px; }
 
+/* Цель */
+.big { font-family: 'Unbounded', sans-serif; font-size: 22px; font-weight: 700; line-height: 1.2; }
+.big-line { margin: 0; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.bar { position: relative; height: 12px; border-radius: 6px; background: var(--line); margin-top: 6px; }
+.bar-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 6px; background: var(--accent); max-width: 100%; }
+.tick { position: absolute; top: -4px; width: 2px; height: 20px; margin-left: -1px; border-radius: 1px; background: #6B7280; }
+.tick-on { background: var(--bg); }
+.marks { position: relative; height: 16px; font-size: 12px; color: var(--muted); }
+.mark { position: absolute; transform: translateX(-50%); }
+.mark-end { position: absolute; right: 0; }
+.tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 14px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ledger { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.ledger li { padding: 10px 0; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+.ledger li:first-child { border-top: 0; padding-top: 0; }
+.led-star span:first-child { color: var(--accent); font-weight: 600; }
+.nowrap { white-space: nowrap; }
+.more summary { cursor: pointer; min-height: 28px; display: flex; align-items: center; }
+.sub-ledger { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
+.sub-ledger li { padding: 0; border: 0; flex-direction: row; }
+.list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 1.45; }
+
+/* Магазин */
+.textarea { padding: 10px 12px; resize: none; min-height: 88px; line-height: 1.4; }
+.bought { padding-top: 8px; border-top: 1px solid var(--line); font-size: 14px; }
+.idea { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 14px; }
+.idea-text { overflow-wrap: anywhere; }
+.idea .chip { white-space: nowrap; }
+.strong { margin: 0; font-size: 14px; font-weight: 600; }
+.warn-strong { margin: 0; font-size: 14px; font-weight: 600; color: var(--bad); }
+.ghost-bad { border-color: var(--bad); color: var(--bad); width: 100%; }
+.warn-box { display: flex; flex-direction: column; gap: 10px; }
+.chip-bad { background: transparent; border: 1px solid var(--bad); color: var(--bad); }
+
+/* Правила */
+.rule-row { font-size: 14px; min-height: 44px; }
+.num-in { width: 96px; flex: none; text-align: right; }
+.switch-row { font-size: 14px; min-height: 44px; cursor: pointer; }
+.switch {
+  appearance: none; -webkit-appearance: none; width: 52px; height: 32px; border-radius: 16px; background: var(--line-2);
+  position: relative; cursor: pointer; margin: 0; flex: none; transition: background .15s;
+}
+.switch::after { content: ''; position: absolute; top: 4px; left: 4px; width: 24px; height: 24px; border-radius: 12px; background: var(--text); transition: left .15s; }
+.switch:checked { background: var(--accent); }
+.switch:checked::after { left: 24px; background: var(--bg); }
+
+/* Разделы вкладки «Друг» у админа */
+.view { display: flex; flex-direction: column; gap: 16px; }
+.subnav { display: flex; gap: 6px; padding: 4px; border-radius: 14px; background: var(--bar); border: 1px solid var(--line); }
+.sub-tab {
+  flex: 1; min-height: 40px; display: flex; align-items: center; justify-content: center; border-radius: 10px;
+  color: var(--muted); text-decoration: none; font-size: 13px; font-weight: 500;
+}
+.sub-tab:hover { color: var(--text); }
+.sub-on, .sub-on:hover { background: var(--accent); color: var(--bg); font-weight: 600; }
+
 /* Вкладки */
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
