@@ -1,0 +1,19 @@
+# После мержа в main сам выполняет новые SQL-файлы в Supabase.
+# Нужен секрет репозитория SUPABASE_DB_URL (Supabase → Connect → Session pooler, URI с паролем).
+name: SQL в Supabase
+on:
+  push:
+    branches: [main]
+    paths: ['supabase/migrations/**', 'supabase/apply-migrations.sh']
+  workflow_dispatch:
+concurrency: migrations
+permissions:
+  contents: read
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash supabase/apply-migrations.sh
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
