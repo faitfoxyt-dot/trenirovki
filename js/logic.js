@@ -69,7 +69,7 @@ export function caption(date, exerciseName, setNo) {
 
 export function goalText(ex) {
   const sets = `${ex.sets} ${plural(ex.sets, 'подход', 'подхода', 'подходов')}`;
-  return ex.target_reps ? `${sets} · цель ${ex.target_reps}` : `${sets} · цель после калибровки`;
+  return ex.target_reps ? `${sets} · цель ${ex.target_reps}` : `${sets} · без цели`;
 }
 
 export function plural(n, one, few, many) {

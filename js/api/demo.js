@@ -7,15 +7,16 @@ const ADMIN = { id: 'admin', role: 'admin', name: 'Тимур' };
 const ATHLETE = { id: 'athlete', role: 'athlete', name: 'Друг' };
 
 const RULE_KEYS = ['calibration', 'per_exercise', 'streak_from', 'streak_step', 'streak_max',
-  'bonus_cap_day', 'miss_penalty_pct', 'rest_day_price', 'purchase_limit_week', 'phone_price'];
+  'miss_penalty_pct', 'rest_day_price', 'purchase_limit_week', 'phone_price'];
 
 const db = {
   settings: { id: 1, start_date: null, grace_hours: 3, show_rules: false },
   rules: [{ valid_from: '2000-01-01', calibration: true }],
   template: [1, 2, 3, 4, 5, 6, 7].map((dow) => ({ dow, status: dow === 7 ? 'rest' : 'training' })),
   exercises: [
-    { id: 1, name: 'Подтягивания', sets: 3, target_reps: null, position: 0, active: true },
-    { id: 2, name: 'Пресс', sets: 3, target_reps: null, position: 1, active: true },
+    { id: 1, name: 'Подтягивания', sets: 3, target_reps: null, position: 0, active: true, archived: false },
+    { id: 2, name: 'Пресс', sets: 3, target_reps: null, position: 1, active: true, archived: false },
+    { id: 3, name: 'Отжимания на брусьях', sets: 3, target_reps: null, position: 2, active: false, archived: false },
   ],
   days: [],
   logs: [],
@@ -123,8 +124,8 @@ function addLedger(row) {
 function awardSet(l) {
   let r = rulesFor(l.date);
   const cal = isCal(r);
-  // На калибровке теорию считаем по самым свежим числам, которые вписал Тимур.
-  if (cal) r = rulesFor(addDays(today(), 1));
+  // В тестовый период теорию считаем по текущим числам.
+  if (cal) r = rulesFor(today());
   let ok = (l.review === 'accepted' || l.review === 'corrected') && l.confirmed !== null;
   const pe = r?.per_exercise?.[l.exercise_id] ?? {};
   const ex = findDay(l.athlete_id, l.date)?.plan?.find((e) => e.id === l.exercise_id);
@@ -138,11 +139,11 @@ function awardSet(l) {
     const base = l.confirmed * (pe.rep ?? 0) + (full ? pe.set ?? 0 : 0);
     if (target !== null && l.confirmed > target && (pe.over ?? 0) > 0) {
       bon = Math.round((l.confirmed - target) * pe.over);
-      if (r.bonus_cap_day != null) {
+      if (pe.cap != null) {
         const other = (cal ? db.theory : db.logs)
-          .filter((x) => x.athlete_id === l.athlete_id && x.date === l.date && (x.set_id ?? x.id) !== l.id)
+          .filter((x) => x.athlete_id === l.athlete_id && x.date === l.date && x.exercise_id === l.exercise_id && (x.set_id ?? x.id) !== l.id)
           .reduce((s, x) => s + (x.bonus ?? 0), 0);
-        bon = Math.max(0, Math.min(bon, r.bonus_cap_day - other));
+        bon = Math.max(0, Math.min(bon, pe.cap - other));
       }
     }
     mult = streakMult(r, streakAt(l.athlete_id, l.date));
@@ -150,7 +151,7 @@ function awardSet(l) {
   }
 
   db.theory = db.theory.filter((x) => x.set_id !== l.id);
-  if (ok && cal) db.theory.push({ set_id: l.id, athlete_id: l.athlete_id, date: l.date, points: total, bonus: bon });
+  if (ok && cal) db.theory.push({ set_id: l.id, athlete_id: l.athlete_id, date: l.date, exercise_id: l.exercise_id, points: total, bonus: bon });
 
   ok = ok && !cal;
   const reviewed = l.points != null;
@@ -164,7 +165,7 @@ function awardSet(l) {
   addLedger({ athlete_id: l.athlete_id, date: l.date, kind: 'set', amount: Math.max(delta, -balance(l.athlete_id)), rating: delta, note, set_id: l.id });
 }
 
-// Штрафы за пропуск, бонус за рост, вехи — как settle() в базе.
+// Штрафы за пропуск и вехи — как settle() в базе.
 function settle(a) {
   const start = db.settings.start_date;
   if (!start) return;
@@ -179,31 +180,6 @@ function settle(a) {
     const pen = Math.min(bal, Math.round((bal * r.miss_penalty_pct) / 100));
     addLedger({ athlete_id: a, date: d, kind: 'penalty', amount: -pen,
       note: `Пропуск: сделано ${c[0]} из ${c[1]} подходов · −${r.miss_penalty_pct}% баланса`, key: `penalty:${d}` });
-  }
-
-  for (let i = 1; i <= 5; i += 1) {
-    const wk = addDays(weekStart(t), -7 * i);
-    const end = addDays(wk, 6);
-    if (end < start) continue;
-    const r = rulesFor(end);
-    if (isCal(r) || hasKey(a, `growth:${wk}`)) continue;
-    const prevStart = addDays(wk, -7);
-    if (db.logs.some((l) => l.athlete_id === a && l.date >= prevStart && l.date <= end && l.review === 'pending' && l.claimed !== null)) continue;
-    const best = (from, to) => {
-      const m = new Map();
-      db.logs.filter((l) => l.athlete_id === a && l.date >= from && l.date <= to && (l.review === 'accepted' || l.review === 'corrected'))
-        .forEach((l) => m.set(l.exercise_id, Math.max(m.get(l.exercise_id) ?? -1, l.confirmed)));
-      return m;
-    };
-    const cur = best(wk, end);
-    const prev = best(prevStart, addDays(wk, -1));
-    const grew = db.exercises.filter((e) => cur.has(e.id) && prev.has(e.id) && cur.get(e.id) > prev.get(e.id)
-      && (r.per_exercise?.[e.id]?.growth ?? 0) > 0);
-    const sum = grew.reduce((s, e) => s + r.per_exercise[e.id].growth, 0);
-    if (sum > 0) {
-      addLedger({ athlete_id: a, date: end, kind: 'bonus_growth', amount: sum, rating: sum,
-        note: `Рост за неделю: ${grew.map((e) => e.name).join(', ')}`, key: `growth:${wk}` });
-    }
   }
 
   const price = rulesFor(t)?.phone_price;
@@ -273,8 +249,8 @@ function setStatus(a, date, status) {
   const rulesFrom = addDays(start, 7);
   db.settings.start_date = start;
   db.rules.push({ valid_from: rulesFrom, calibration: false,
-    per_exercise: { 1: { rep: 2, set: 5, over: 2, growth: 30 }, 2: { rep: 0.5, set: 5, over: 0.5, growth: 15 } },
-    streak_from: 3, streak_step: 0.1, streak_max: 1.5, bonus_cap_day: 10,
+    per_exercise: { 1: { rep: 2, set: 5, over: 2, cap: 6 }, 2: { rep: 0.5, set: 5, over: 0.5, cap: 3 }, 3: { rep: 1, set: 5 } },
+    streak_from: 3, streak_step: 0.1, streak_max: 1.5,
     miss_penalty_pct: 10, rest_day_price: 150, purchase_limit_week: 2, phone_price: 4000 });
 
   let j = 0; // номер тренировочного дня
@@ -398,7 +374,7 @@ export const api = {
     if (date === c.today) grace = false;
     else if (date === addDays(c.today, -1) && c.grace) grace = true;
     else fail('День закрыт');
-    if (db.settings.start_date && date < db.settings.start_date) fail('Калибровка ещё не началась');
+    if (db.settings.start_date && date < db.settings.start_date) fail('Старт ещё не наступил');
     const d = ensureDay(uid, date);
     if (!d || d.status !== 'training') fail('В этот день нет тренировки');
     const ex = d.plan.find((e) => e.id === exerciseId);
@@ -460,16 +436,16 @@ export const api = {
 
   async rules() {
     const t = today();
-    return clone({ current: rulesFor(t), next: rulesFor(addDays(t, 1)), from: addDays(t, 1) });
+    return clone({ current: rulesFor(t), next: rulesFor(t), from: t });
   },
 
   async saveRules(p) {
     needAdmin();
-    const row = { valid_from: addDays(today(), 1) };
+    const row = { valid_from: today() };
     RULE_KEYS.forEach((k) => { row[k] = p[k] ?? null; });
     row.calibration = p.calibration ?? true;
     row.per_exercise = p.per_exercise ?? {};
-    db.rules = db.rules.filter((r) => r.valid_from !== row.valid_from).concat(row);
+    db.rules = db.rules.filter((r) => r.valid_from < row.valid_from).concat(row);
     db.logs.filter((l) => l.date > addDays(today(), -60) && (l.review === 'accepted' || l.review === 'corrected')
       && isCal(rulesFor(l.date))).forEach(awardSet);
     return clone(row);
@@ -607,5 +583,58 @@ export const api = {
     ['ledger', 'purchases', 'sick', 'ideas', 'logs', 'mornings', 'days', 'theory'].forEach((k) => {
       db[k] = db[k].filter((x) => x.athlete_id !== a);
     });
+  },
+
+  // ── v3.2 ──
+
+  async clearAthlete(a, what, from, to) {
+    needAdmin();
+    if (!what?.length) fail('Выбери, что стереть');
+    const f = from || '1900-01-01';
+    const t = to || '2999-12-31';
+    if (f > t) fail('Дата «с» позже даты «по»');
+    const inR = (x) => x.athlete_id === a && x.date >= f && x.date <= t;
+    const res = {};
+    const drop = (key, table, test = inR) => {
+      const before = db[table].length;
+      db[table] = db[table].filter((x) => !test(x));
+      res[key] = before - db[table].length;
+    };
+    if (what.includes('purchases')) {
+      db.purchases.filter((p) => inR(p) && p.status === 'active').forEach((p) => {
+        const d = findDay(a, p.date);
+        if (d && d.status === 'bought') d.status = p.prev_status;
+      });
+      drop('purchases', 'purchases');
+    }
+    if (what.includes('points')) {
+      drop('points', 'ledger');
+      db.logs.filter(inR).forEach((l) => { l.points = null; l.bonus = null; });
+    }
+    if (what.includes('sets')) {
+      const gone = new Set(db.logs.filter(inR).map((l) => l.id));
+      drop('sets', 'logs');
+      db.theory = db.theory.filter((x) => !gone.has(x.set_id));
+      db.ledger.forEach((x) => { if (gone.has(x.set_id)) x.set_id = null; });
+    }
+    if (what.includes('sick')) drop('sick', 'sick');
+    if (what.includes('ideas')) drop('ideas', 'ideas', (i) => i.athlete_id === a && i.created_at.slice(0, 10) >= f && i.created_at.slice(0, 10) <= t);
+    if (what.includes('mornings')) drop('mornings', 'mornings');
+    if (what.includes('days')) drop('days', 'days');
+    return res;
+  },
+
+  async deleteLedger(id) {
+    needAdmin();
+    const x = db.ledger.find((r) => r.id === id) ?? fail('Запись не найдена');
+    if (x.key) {
+      x.amount = 0;
+      x.rating = 0;
+      if (!x.note?.startsWith('Удалено Тимуром: ')) x.note = `Удалено Тимуром: ${x.note ?? ''}`;
+      return;
+    }
+    const l = x.set_id && db.logs.find((s) => s.id === x.set_id);
+    if (l) { l.points = null; l.bonus = null; }
+    db.ledger = db.ledger.filter((r) => r.id !== id);
   },
 };

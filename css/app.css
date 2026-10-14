@@ -316,3 +316,5 @@ input[type=date].input { display: block; padding-top: 10px; padding-bottom: 10px
 .dp-new .input { flex: 1; min-width: 0; }
 .dp-new .ghost { flex: none; }
 .idea .ghost.icon { flex: none; }
+.ledger .row-gap { align-items: center; }
+.del-led { width: 32px; height: 32px; min-height: 32px; padding: 0; font-size: 12px; flex: none; }

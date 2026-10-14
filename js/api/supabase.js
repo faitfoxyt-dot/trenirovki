@@ -72,7 +72,7 @@ export const api = {
   async saveExercise(ex) {
     const row = {
       name: ex.name, sets: ex.sets, target_reps: ex.target_reps,
-      position: ex.position, active: ex.active,
+      position: ex.position, active: ex.active, archived: ex.archived ?? false,
     };
     if (ex.id) return check(await sb.from('exercises').update(row).eq('id', ex.id).select().single());
     return check(await sb.from('exercises').insert(row).select().single());
@@ -209,5 +209,15 @@ export const api = {
 
   async resetAthlete(athleteId) {
     return check(await sb.rpc('reset_athlete', { p_athlete: athleteId }));
+  },
+
+  // ── v3.2 ──
+
+  async clearAthlete(athleteId, what, from, to) {
+    return check(await sb.rpc('clear_athlete', { p_athlete: athleteId, p_what: what, p_from: from || null, p_to: to || null }));
+  },
+
+  async deleteLedger(id) {
+    return check(await sb.rpc('delete_ledger', { p_id: id }));
   },
 };
