@@ -1,6 +1,6 @@
 // «Цель»: путь к телефону по балансу с вехами, баланс, рейтинг, серия и история очков.
 
-import { html, dayTitle } from '../util.js';
+import { html, dayTitle, general } from '../util.js';
 import { POINTS, signed, isCalibration } from '../logic.js';
 
 const MILESTONES = [25, 50, 75];
@@ -92,8 +92,8 @@ export async function render(el, ctx, args, alive) {
 
     <section class="card">
       <h2 class="h2">Как это работает</h2>
-      <ul class="list">${howItWorks(r)}</ul>
-      ${!isAdmin && ctx.settings?.show_rules ? html`<a class="ghost link" href="#/rules">Все числа правил →</a>` : ''}
+      ${howItWorks(r)}
+      ${!isAdmin && ctx.settings?.show_rules ? html`<a class="ghost link" href="#/rules">Все цифры — в правилах →</a>` : ''}
     </section>
 
   `);
@@ -232,7 +232,7 @@ function rowHtml(x, isAdmin) {
       <div class="row"><span>Подходы за день: ${x.items.length}</span><b class="${cls} nowrap">${signed(x.amount)}</b></div>
       <p class="label">${dayTitle(x.date)}</p>
       <details class="more"><summary class="label">Подробнее</summary>
-        <ul class="sub-ledger">${x.items.map((i) => html`<li class="row"><span>${i.note}</span>
+        <ul class="sub-ledger">${x.items.map((i) => html`<li class="row"><span>${general(i.note)}</span>
           <span class="row-gap nowrap"><span>${signed(i.amount)}</span>${del(i, isAdmin)}</span></li>`)}</ul>
       </details>
     </li>`;
@@ -241,33 +241,49 @@ function rowHtml(x, isAdmin) {
   const cls = milestone ? 'ok' : x.amount > 0 ? 'ok' : x.amount < 0 ? 'bad' : '';
   const ratingNote = x.rating !== x.amount && x.rating !== 0 ? ` · рейтинг ${signed(x.rating)}` : '';
   return html`<li class="${milestone ? 'led-star' : ''}">
-    <div class="row"><span>${x.note}</span><span class="row-gap nowrap"><b class="${cls}">${milestone ? '★' : signed(x.amount)}</b>${del(x, isAdmin)}</span></div>
+    <div class="row"><span>${general(x.note)}</span><span class="row-gap nowrap"><b class="${cls}">${milestone ? '★' : signed(x.amount)}</b>${del(x, isAdmin)}</span></div>
     <p class="label">${dayTitle(x.date)}${ratingNote}</p>
   </li>`;
 }
 
-// Общее объяснение без чисел — видно всегда, даже в тестовом периоде и при скрытых правилах.
-// Числа серии и штрафа добавляются, только когда очки уже начисляются и numbers не выключен.
+// «Как это работает» простыми словами. Видно всегда, даже в тестовом периоде и при скрытых правилах.
+// Цифры серии и штрафа — только когда очки уже идут и numbers не выключен.
 export function howItWorks(r, { numbers = true } = {}) {
   const cal = isCalibration(r);
   const nums = numbers && !cal;
   const n = (v) => (v === null || v === undefined ? null : Number(v));
-  const items = [];
-  if (cal) items.push('Сейчас тестовый период: очки пока не начисляются. Когда он закончится, всё будет считаться так, как написано ниже.');
-  items.push('Очки дают только за подходы, которые подтвердил Тимур. Они складываются из трёх частей: за каждый повтор, за полный подход'
-    + ' (где цель по повторам выполнена) и бонус за повторы сверх цели. У каждого упражнения свои числа.');
-  items.push('Бонус сверх цели иногда ограничен потолком: за день по одному упражнению его не больше заданного числа очков.'
-    + ' Повторы сверх этого всё равно приносят обычные очки за повтор, просто без бонуса.');
-  items.push('Серия — тренировочные дни подряд, где сделан весь план. Чем она длиннее, тем больше множитель: он умножает все очки за подход.'
-    + ' Выходные, купленные дни и больничный серию не продлевают и не рвут.'
-    + (nums && r.streak_from && r.streak_step
-      ? ` С ${r.streak_from}-го дня серии множитель ×${Math.round((1 + Number(r.streak_step)) * 100) / 100},`
-        + ` дальше +${n(r.streak_step)} в день, максимум ×${n(r.streak_max) ?? '∞'}. Множитель один на все подходы дня.` : ''));
-  const miss = 'Пропуск — не сделан хоть один подход плана. Подход с 0 повторов или отклонённый Тимуром не считается.';
-  items.push(nums && n(r.miss_penalty_pct) > 0
-    ? `${miss} Штраф: ${n(r.miss_penalty_pct)}% от баланса.`
-    : `${miss} За него снимается процент от баланса.`);
-  items.push('Баланс тратишь в «Магазине» на выходные, а главное — на телефон.');
-  items.push('Рейтинг — всё, что заработано за всё время. Покупки и штрафы его не уменьшают, только баланс.');
-  return items.map((t) => html`<li>${t}</li>`);
+  const x = (v) => Math.round(v * 100) / 100;
+  const streak = nums && r.streak_from && r.streak_step
+    ? `С ${r.streak_from}-го дня подряд очки умножаются на ×${x(1 + Number(r.streak_step))}, потом каждый день ещё +${n(r.streak_step)}`
+      + (n(r.streak_max) ? `, максимум ×${n(r.streak_max)}.` : '.')
+    : 'Чем дольше держишь серию, тем больше множитель на очки.';
+  const penalty = nums && n(r.miss_penalty_pct) > 0 ? `${n(r.miss_penalty_pct)}% баланса` : 'часть баланса';
+  const items = [
+    { icon: '💪', title: 'Тренируешься — получаешь очки', body: html`
+      <p>Отметил подход, крутой генерал проверил — очки твои. Они идут:</p>
+      <ul class="how-list">
+        <li>за каждый повтор;</li>
+        <li>за подход, где добил цель;</li>
+        <li>бонусом за каждый повтор сверх цели.</li>
+      </ul>
+      <p class="label">У каждого упражнения свои цены. У бонуса иногда есть потолок на день: дальше лишние повторы считаются как обычные.</p>` },
+    { icon: '🔥', title: 'Серия', body: html`
+      <p>Делаешь весь план каждый тренировочный день подряд — серия растёт. ${streak}</p>
+      <p class="label">Выходной и больничный серию не ломают.</p>` },
+    { icon: '⚠️', title: 'Пропуск', body: html`
+      <p>Не сделал хоть один подход из плана — день пропущен. Серия начинается заново, и сгорает ${penalty}.</p>
+      <p class="label">Подход на 0 повторов — не подход.</p>` },
+    { icon: '🛒', title: 'Куда тратить', body: html`
+      <p>Всё в «Магазине». Главная цель — телефон, копи на него. По пути можно купить выходной, если очень надо.</p>
+      <p class="label">Заболел по-настоящему — попроси больничный, это бесплатно. Есть идея, что ещё продавать за очки, — предложи там же.</p>` },
+    { icon: '🏆', title: 'Баланс и рейтинг', body: html`
+      <p><b>Баланс</b> — сколько можешь потратить прямо сейчас. <b>Рейтинг</b> — сколько заработал за всё время, он никогда не падает.</p>` },
+    { icon: '👀', title: 'События', body: html`
+      <p>Иногда тут будет происходить что-то особенное. Объявлять никто не будет: кто ищет, тот найдёт.</p>` },
+  ];
+  return html`${cal ? html`<p class="notice">Сейчас тестовый период: очки пока не идут. Скоро всё будет по-настоящему.</p>` : ''}
+    <div class="how">${items.map((i) => html`<div class="how-item">
+      <span class="how-icon" aria-hidden="true">${i.icon}</span>
+      <div class="how-text"><h3 class="how-title">${i.title}</h3>${i.body}</div>
+    </div>`)}</div>`;
 }

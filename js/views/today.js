@@ -57,10 +57,10 @@ export async function render(el, ctx, args, alive) {
     ${!isAdmin && isToday && clock.grace ? html`<a class="notice" href="#/day/${yesterday}">
       Вчерашний день закрыт. До 03:00 можно отметить видео за вчера →</a>` : ''}
     ${mode === 'grace' ? html`<p class="notice">День закрыт. До 03:00 можно отметить только видео.</p>` : ''}
-    ${!isAdmin && !isToday && mode === 'closed' && status === 'training' ? html`<p class="notice">День закрыт, править может только Тимур.</p>` : ''}
+    ${!isAdmin && !isToday && mode === 'closed' && status === 'training' ? html`<p class="notice">День закрыт, править может только крутой генерал.</p>` : ''}
 
     ${day?.note && status === 'training' ? html`<section class="card task-card">
-      <h2 class="h2">Задание от Тимура</h2><p>${day.note}</p></section>` : ''}
+      <h2 class="h2">Приказ генерала</h2><p>${day.note}</p></section>` : ''}
 
     ${isToday || state.morning.muscles || state.morning.energy ? html`<section class="card" id="morning"></section>` : ''}
 
@@ -93,7 +93,7 @@ function restText(status, beforeStart) {
   if (status === 'rest' || status === 'bought') return 'Отдых по плану. Серию не рвёт и не продлевает.';
   if (status === 'sick') return 'Больничный. Восстанавливайся, очки не тратятся.';
   if (status === 'busy') return 'День без задания по договорённости.';
-  return 'Тимур ещё не задал план на этот день.';
+  return 'Крутой генерал ещё не задал план на этот день.';
 }
 
 function exerciseCard(ex, date, state, editable, mode) {
@@ -202,11 +202,11 @@ async function copy(text) {
 
 function sickHtml(state, editable) {
   const s = state.sick;
-  if (s?.status === 'pending') return html`<p class="warn-strong">Запрос отправлен Тимуру</p>`;
-  if (s?.status === 'approved') return html`<p class="warn-strong">Тимур одобрил больничный</p>`;
+  if (s?.status === 'pending') return html`<p class="warn-strong">Запрос отправлен генералу</p>`;
+  if (s?.status === 'approved') return html`<p class="warn-strong">Генерал одобрил больничный</p>`;
   const btn = editable && state.training
     ? html`<button type="button" class="ghost ghost-bad" id="ask-sick">Попросить больничный</button>` : '';
-  if (s?.status === 'declined') return html`<p class="warn-strong">Тимур отказал. Можно попросить ещё раз.</p>${btn}`;
+  if (s?.status === 'declined') return html`<p class="warn-strong">Генерал отказал. Можно попросить ещё раз.</p>${btn}`;
   return btn;
 }
 
