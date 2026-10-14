@@ -61,7 +61,8 @@ export async function render(el, ctx, args, alive) {
       <div class="tile"><span class="big">${w.balance}</span><span class="label">Баланс</span></div>
       <div class="tile"><span class="big">${w.rating}</span><span class="label">Рейтинг</span></div>
       <div class="tile"><span class="big">${w.streak}</span>
-        <span class="label">Серия${r?.streak_from && r?.streak_step ? html` · сегодня <b class="${w.mult > 1 ? 'ok' : ''}">×${w.mult}</b>` : ''}</span></div>
+        <span class="label">${isCalibration(r) ? 'Тест. серия' : 'Серия'}${r?.streak_from && r?.streak_step
+          ? html`${isCalibration(r) ? ' ' : ' · сегодня '}<b class="${w.mult > 1 ? 'ok' : ''}">×${w.mult}</b>` : ''}</span></div>
     </div>
 
     ${isAdmin ? html`<section class="card" id="manual">
@@ -269,7 +270,7 @@ export function howItWorks(r, { numbers = true } = {}) {
       <p class="label">У каждого упражнения свои цены. У бонуса иногда есть потолок на день: дальше лишние повторы считаются как обычные.</p>` },
     { icon: '🔥', title: 'Серия', body: html`
       <p>Делаешь весь план каждый тренировочный день подряд — серия растёт. ${streak}</p>
-      <p class="label">Выходной и больничный серию не ломают.</p>` },
+      <p class="label">Выходной и больничный серию не ломают. У тестового периода своя серия: в настоящую она не идёт и её не ломает.</p>` },
     { icon: '⚠️', title: 'Пропуск', body: html`
       <p>Не сделал хоть один подход из плана — день пропущен. Серия начинается заново, и сгорает ${penalty}.</p>
       <p class="label">Подход на 0 повторов — не подход.</p>` },

@@ -85,7 +85,7 @@ export async function render(el, ctx, args, alive) {
 // Серия и множитель, на который умножаются очки за сегодняшние подходы.
 function streakChip(w, r) {
   const on = !isCalibration(r) && r?.streak_from && r?.streak_step;
-  return html`<span class="chip ${on && w.mult > 1 ? 'chip-on' : ''}">Серия ${w.streak}${on ? ` · сегодня очки ×${w.mult}` : ''}</span>`;
+  return html`<span class="chip ${on && w.mult > 1 ? 'chip-on' : ''}">${isCalibration(r) ? 'Тестовая серия' : 'Серия'} ${w.streak}${on ? ` · сегодня очки ×${w.mult}` : ''}</span>`;
 }
 
 function restText(status, beforeStart) {
