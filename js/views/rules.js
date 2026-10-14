@@ -2,7 +2,7 @@
 // Админ меняет — действует сразу. Атлет видит только чтение, если Тимур включил показ.
 
 import { html } from '../util.js';
-import { POINTS, signed, amount, isSec } from '../logic.js';
+import { POINTS, signed, amount, isSec, cxLetter } from '../logic.js';
 import { howItWorks } from './goal.js';
 
 // Числа у каждого упражнения свои.
@@ -46,8 +46,16 @@ export async function render(el, ctx, args, alive) {
     return;
   }
   // Список упражнений: всё, что не удалено. Новые строки получают id после сохранения.
-  const exercises = (await api.exercises()).filter((e) => !e.archived).map((e) => ({ ...e }));
+  const [all, complexes] = await Promise.all([api.exercises(), api.complexes()]);
   if (!alive()) return;
+  const exercises = all.filter((e) => !e.archived).map((e) => ({ ...e }));
+  // В каких комплексах упражнение: «А · В».
+  const inCx = (e) => complexes.map((c, i) => (c.items.some((x) => x.id === e.id) ? cxLetter(i) : null)).filter(Boolean);
+  const cxNote = (e) => {
+    const l = inCx(e);
+    if (!l.length) return '';
+    return complexes.length > 1 ? `В ${l.length > 1 ? 'комплексах' : 'комплексе'} ${l.join(' · ')}` : 'В комплексе';
+  };
 
   const next = rules?.current ?? {};
   const per = next.per_exercise ?? {};
@@ -120,7 +128,7 @@ export async function render(el, ctx, args, alive) {
           <button type="button" class="pill ${isSec(e.unit) ? 'pill-on' : ''}" data-unit="sec" aria-pressed="${isSec(e.unit)}">На время</button>
         </div>`
         : html`<p class="em">${e.name}${isSec(e.unit) ? ' · на время' : ''}</p>`}
-      ${e.active ? html`<p class="label">В общем комплексе${e.target_reps ? ` · цель ${amount(e.target_reps, e.unit)}` : ''}</p>` : ''}
+      ${cxNote(e) ? html`<p class="label">${cxNote(e)}</p>` : ''}
       <div class="grid-2">${PER_EX.map((f) => html`<div class="field">
         <label class="label" for="p-${keyOf(e)}-${f.k}">${fieldLabel(f, e.unit)}</label>
         <input class="input num-in" id="p-${keyOf(e)}-${f.k}" data-pk="${f.k}" type="number" inputmode="decimal"
@@ -151,7 +159,7 @@ export async function render(el, ctx, args, alive) {
     if (!e.target.closest('[data-del]')) return;
     const i = exercises.findIndex((x) => String(keyOf(x)) === e.target.closest('[data-key]').dataset.key);
     const ex = exercises[i];
-    const warn = ex.active ? ' Оно уберётся и из общего комплекса.' : '';
+    const warn = inCx(ex).length ? ' Оно уберётся и из комплексов.' : '';
     if (ex.id && !confirm(`Удалить «${ex.name}»?${warn} Старые подходы и очки останутся. Удалится после «Сохранить правила».`)) return;
     if (ex.id) removed.push(ex);
     exercises.splice(i, 1);

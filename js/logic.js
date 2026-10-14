@@ -78,6 +78,10 @@ export function unitOf(ex, catalog) {
 }
 export const isSec = (unit) => unit === 'sec';
 
+// Комплексы идут по кругу: А, Б, В… (не больше пяти).
+export const CX_LETTERS = 'АБВГД';
+export const cxLetter = (i) => CX_LETTERS[i] ?? '?';
+
 // Число с единицей: «12» для повторов, «45 с» или «1 мин 30 с» для секунд.
 export function amount(n, unit) {
   if (n === null || n === undefined) return '—';

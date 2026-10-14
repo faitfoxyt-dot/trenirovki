@@ -1,7 +1,7 @@
-// «План» (админ): старт, шаблон недели, комплекс из списка упражнений, план на день, очистка.
+// «План» (админ): старт, шаблон недели, комплексы по кругу, план на день, очистка.
 
-import { html, WEEKDAYS, dayTitle, addDays } from '../util.js';
-import { DAY_STATUS, unitOf, unitText } from '../logic.js';
+import { html, WEEKDAYS, WD_SHORT, dayTitle, addDays, isoDow, shortDate } from '../util.js';
+import { DAY_STATUS, unitOf, unitText, cxLetter, CX_LETTERS } from '../logic.js';
 
 const TEMPLATE_OPTIONS = [
   { value: '', label: 'Не задано' },
@@ -10,6 +10,7 @@ const TEMPLATE_OPTIONS = [
   { value: 'busy', label: 'Занят' },
 ];
 const DAY_OPTIONS = ['training', 'rest', 'sick', 'busy'];
+const dayShort = (d) => `${WD_SHORT[isoDow(d) - 1]} ${shortDate(d)}`;
 const CLEAR = [
   { k: 'sets', label: 'Подходы (и их теоретические очки)' },
   { k: 'points', label: 'Записи очков' },
@@ -22,12 +23,21 @@ const CLEAR = [
 
 export async function render(el, ctx, args, alive) {
   const { api, clock, settings, me } = ctx;
-  const [template, exercises] = await Promise.all([api.weekTemplate(), api.exercises()]);
+  const [template, exercises, complexes, schedule] = await Promise.all([
+    api.weekTemplate(), api.exercises(), api.complexes(),
+    ctx.athleteId ? api.complexSchedule(ctx.athleteId, clock.today, addDays(clock.today, 27)) : [],
+  ]);
   if (!alive()) return;
 
-  // Список упражнений ведётся в «Правилах»; здесь из него собирается общий комплекс.
+  // Список упражнений ведётся в «Правилах»; здесь из него собираются комплексы А, Б, В…
   const catalog = exercises.filter((e) => !e.archived);
-  const rows = catalog.filter((e) => e.active).map(({ id, sets, target_reps }) => ({ id, sets, target_reps }));
+  const cx = complexes.map((c) => c.items.filter((x) => catalog.some((e) => e.id === x.id))
+    .map(({ id, sets, target_reps }) => ({ id, sets, target_reps: target_reps ?? null })));
+  if (!cx.length) cx.push([]);
+  let cur = 0; // какой комплекс сейчас открыт
+  // Какой комплекс сегодня (или на ближайшей тренировке, если сегодня не тренировка).
+  let next = Math.min(schedule[0]?.complex ?? 0, cx.length - 1);
+  const todayTraining = schedule[0]?.status === 'training';
   const athleteName = ctx.athletes.find((a) => a.id === ctx.athleteId)?.name || 'без имени';
 
   el.innerHTML = String(html`
@@ -60,14 +70,19 @@ export async function render(el, ctx, args, alive) {
     </section>
 
     <section class="card">
-      <h2 class="h2">Комплекс тренировки</h2>
-      <p class="label">Один комплекс на все тренировочные дни. Пустая цель — друг просто пишет, сколько сделал.
-        Изменения попадут в дни, которые друг ещё не открывал. Новые упражнения и очки — во вкладке «Правила».</p>
+      <h2 class="h2">Комплексы</h2>
+      <p class="label">Сделай несколько комплексов — они пойдут по кругу по тренировочным дням: А, Б, В, снова А…
+        Выходной, больничный и «занят» очередь не двигают. Пустая цель — друг просто пишет, сколько сделал.
+        Новые упражнения и очки — во вкладке «Правила».</p>
+      <div class="seg" id="cx-tabs" role="group" aria-label="Комплексы"></div>
       <div id="ex-list"></div>
       ${catalog.length ? html`<button type="button" class="ghost" id="ex-add">+ Упражнение из списка</button>`
         : html`<p class="label">Список упражнений пуст. Добавь их во вкладке «Правила».</p>`}
+      <button type="button" class="ghost ghost-bad" id="cx-del" hidden></button>
+      <div id="cx-rot" class="stack-8"></div>
       <p class="error" id="ex-error" role="alert"></p>
-      <button type="button" class="btn" id="ex-save">Сохранить комплекс</button>
+      <button type="button" class="btn" id="ex-save">Сохранить комплексы</button>
+      <p class="label">Изменения попадут в дни, которые друг ещё не начал.</p>
     </section>
 
     <section class="card">
@@ -87,7 +102,7 @@ export async function render(el, ctx, args, alive) {
 
     ${ctx.athleteId ? html`<section class="card">
       <h2 class="h2">План на конкретный день</h2>
-      <p class="label">Свой набор упражнений и задание на один день — сегодня или позже. Остальные дни идут по общему комплексу.</p>
+      <p class="label">Свой набор упражнений и задание на один день — сегодня или позже. Остальные дни идут по очереди комплексов.</p>
       <label class="label" for="dp-date">День</label>
       <input class="input" id="dp-date" type="date" min="${clock.today}" value="${addDays(clock.today, 1)}">
       <div id="dp-body"></div>
@@ -96,7 +111,7 @@ export async function render(el, ctx, args, alive) {
     <section class="card">
       <h2 class="h2">Очистить данные атлета</h2>
       <p class="label">Сотри только нужное: выбери, что и за какие дни. Пустые даты — за всё время.
-        Аккаунт, список упражнений, комплекс и правила не трогаются. Вернуть нельзя.</p>
+        Аккаунт, список упражнений, комплексы и правила не трогаются. Вернуть нельзя.</p>
       <div class="stack-4">${CLEAR.map((c) => html`<label class="check check-wide"><input type="checkbox" data-clear="${c.k}"><span>${c.label}</span></label>`)}</div>
       <div class="grid-2">
         <div class="field"><label class="label" for="clear-from">С</label><input class="input" id="clear-from" type="date"></div>
@@ -133,10 +148,20 @@ export async function render(el, ctx, args, alive) {
     } catch (err) { ctx.toast(err.message); }
   }));
 
-  // Комплекс: упражнения из списка, у каждого свои подходы и цель.
+  // Комплексы: вкладки А, Б, В…; в каждом упражнения из списка со своими подходами и целью.
   const list = el.querySelector('#ex-list');
+  const tabs = el.querySelector('#cx-tabs');
+  const rot = el.querySelector('#cx-rot');
+  const delBtn = el.querySelector('#cx-del');
+  const trainingDays = schedule.filter((d) => d.status === 'training').map((d) => d.date);
   const draw = () => {
-    list.innerHTML = String(html`${rows.map((x, i) => html`<div class="ex-edit" data-i="${i}">
+    const rows = cx[cur];
+    el.querySelector('#ex-error').textContent = '';
+    tabs.innerHTML = String(html`${cx.map((_, i) => html`<button type="button" class="pill ${i === cur ? 'pill-on' : ''}"
+        data-cx="${i}" aria-pressed="${i === cur}">${cxLetter(i)}</button>`)}
+      ${cx.length < CX_LETTERS.length ? html`<button type="button" class="pill" id="cx-add" aria-label="Добавить комплекс">${cx.length === 1 ? '+ Комплекс' : '+'}</button>` : ''}`);
+    list.innerHTML = String(html`${rows.length ? '' : html`<p class="label">В комплексе ${cxLetter(cur)} пока нет упражнений.</p>`}
+    ${rows.map((x, i) => html`<div class="ex-edit" data-i="${i}">
       <div class="field">
         <label class="label" for="ex-id-${i}">Упражнение</label>
         <select class="input" id="ex-id-${i}" data-k="id">
@@ -158,25 +183,50 @@ export async function render(el, ctx, args, alive) {
         <button type="button" class="ghost" data-remove>Убрать</button>
       </div>
     </div>`)}`);
+    delBtn.hidden = cx.length < 2;
+    delBtn.textContent = `Удалить комплекс ${cxLetter(cur)}`;
+    // Очередь: какой комплекс сегодня и что дальше (как будет после сохранения).
+    rot.innerHTML = cx.length < 2 || !ctx.athleteId ? '' : String(html`
+      <label class="label" for="cx-next">${todayTraining ? 'Сегодня — комплекс' : 'Ближайшая тренировка — комплекс'}</label>
+      <select class="input" id="cx-next">${cx.map((_, i) => html`<option value="${i}" ${i === next ? html`selected` : ''}>${cxLetter(i)}</option>`)}</select>
+      <p class="label">Дальше по тренировкам:</p>
+      <div class="chips">${trainingDays.slice(0, 8).map((d, k) => html`<span class="chip ${(next + k) % cx.length === cur ? 'chip-on' : ''}">${dayShort(d)} · ${cxLetter((next + k) % cx.length)}</span>`)}</div>`);
   };
   draw();
 
+  tabs.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-cx]');
+    if (b) { cur = Number(b.dataset.cx); draw(); return; }
+    if (e.target.closest('#cx-add')) { cx.push([]); cur = cx.length - 1; draw(); }
+  });
+  delBtn.addEventListener('click', () => {
+    if (cx.length < 2) return;
+    if (cx[cur].length && !confirm(`Удалить комплекс ${cxLetter(cur)}? Удалится после «Сохранить комплексы».`)) return;
+    cx.splice(cur, 1);
+    next = Math.min(next > cur ? next - 1 : next, cx.length - 1);
+    cur = Math.min(cur, cx.length - 1);
+    draw();
+  });
+  rot.addEventListener('change', (e) => {
+    if (e.target.id === 'cx-next') { next = Number(e.target.value); draw(); }
+  });
   list.addEventListener('change', (e) => {
     const i = Number(e.target.closest('.ex-edit')?.dataset.i);
     if (e.target.dataset.k !== 'id') return;
     const ex = catalog.find((c) => c.id === Number(e.target.value));
-    rows[i] = { id: ex.id, sets: ex.sets, target_reps: ex.target_reps };
+    cx[cur][i] = { id: ex.id, sets: ex.sets, target_reps: ex.target_reps };
     draw();
   });
   list.addEventListener('input', (e) => {
     const i = Number(e.target.closest('.ex-edit')?.dataset.i);
     const k = e.target.dataset.k;
     if (!k || k === 'id') return;
-    rows[i][k] = e.target.value === '' ? null : Number(e.target.value);
+    cx[cur][i][k] = e.target.value === '' ? null : Number(e.target.value);
   });
   list.addEventListener('click', (e) => {
     const card = e.target.closest('.ex-edit');
     if (!card) return;
+    const rows = cx[cur];
     const i = Number(card.dataset.i);
     const move = e.target.closest('[data-move]');
     if (move) {
@@ -190,29 +240,31 @@ export async function render(el, ctx, args, alive) {
     }
   });
   el.querySelector('#ex-add')?.addEventListener('click', () => {
+    const rows = cx[cur];
     const ex = catalog.find((c) => !rows.some((r) => r.id === c.id));
-    if (!ex) { ctx.toast('Все упражнения из списка уже в комплексе'); return; }
+    if (!ex) { ctx.toast(`Все упражнения из списка уже в комплексе ${cxLetter(cur)}`); return; }
     rows.push({ id: ex.id, sets: ex.sets, target_reps: ex.target_reps });
     draw();
   });
   el.querySelector('#ex-save').addEventListener('click', async () => {
     const error = el.querySelector('#ex-error');
-    const bad = rows.find((x) => !Number.isInteger(x.sets) || x.sets < 1 || x.sets > 10
-      || (x.target_reps !== null && (!Number.isInteger(x.target_reps) || x.target_reps < 1)));
-    if (bad) {
-      error.textContent = 'У каждого упражнения от 1 до 10 подходов; цель — целое число или пусто';
+    const badAt = cx.findIndex((rows) => rows.some((x) => !Number.isInteger(x.sets) || x.sets < 1 || x.sets > 10
+      || (x.target_reps !== null && (!Number.isInteger(x.target_reps) || x.target_reps < 1))));
+    if (badAt >= 0) {
+      cur = badAt; draw();
+      error.textContent = `Комплекс ${cxLetter(badAt)}: у каждого упражнения от 1 до 10 подходов; цель — целое число или пусто`;
+      return;
+    }
+    const emptyAt = cx.length > 1 ? cx.findIndex((rows) => !rows.length) : -1;
+    if (emptyAt >= 0) {
+      cur = emptyAt; draw();
+      error.textContent = `В комплексе ${cxLetter(emptyAt)} нет упражнений: добавь их или удали комплекс`;
       return;
     }
     error.textContent = '';
     try {
-      for (const [i, x] of rows.entries()) {
-        const ex = catalog.find((c) => c.id === x.id);
-        await api.saveExercise({ ...ex, sets: x.sets, target_reps: x.target_reps, position: i, active: true });
-      }
-      for (const ex of catalog.filter((c) => c.active && !rows.some((r) => r.id === c.id))) {
-        await api.saveExercise({ ...ex, active: false });
-      }
-      ctx.toast('Комплекс сохранён');
+      await api.saveComplexes(cx, next);
+      ctx.toast(cx.length > 1 ? 'Комплексы сохранены' : 'Комплекс сохранён');
       ctx.refresh();
     } catch (err) { error.textContent = err.message; }
   });
@@ -237,8 +289,7 @@ export async function render(el, ctx, args, alive) {
       const date = dpDate.value;
       const body = el.querySelector('#dp-body');
       if (!date || date < clock.today) { body.innerHTML = String(html`<p class="error">Выбери сегодня или день позже</p>`); return; }
-      const [row] = await api.days(ctx.athleteId, date, date);
-      dayEditor(body, ctx, date, row ?? null, await api.exercises());
+      dayEditor(body, ctx, date, ...await dayData(api, ctx.athleteId, date));
     };
     dpDate.addEventListener('change', loadDay);
     loadDay();
@@ -265,13 +316,25 @@ export async function render(el, ctx, args, alive) {
   el.querySelector('#sign-out').addEventListener('click', ctx.signOut);
 }
 
+// Всё для редактора дня: строка дня, список упражнений и комплекс, который день получает по очереди.
+async function dayData(api, athleteId, date) {
+  const [[row], exercises, complexes, [sch]] = await Promise.all([
+    api.days(athleteId, date, date), api.exercises(), api.complexes(), api.complexSchedule(athleteId, date, date),
+  ]);
+  const idx = sch?.complex ?? null;
+  const general = (complexes[idx ?? 0]?.items ?? []).map((x) => {
+    const e = exercises.find((y) => y.id === x.id && !y.archived);
+    return e && { id: e.id, name: e.name, sets: x.sets, target_reps: x.target_reps ?? null };
+  }).filter(Boolean);
+  return [row ?? null, exercises, general, complexes.length > 1 && idx !== null ? cxLetter(idx) : null];
+}
+
 // Редактор одного дня: галочка — упражнение в плане дня, свои подходы и цель, задание текстом.
-function dayEditor(old, ctx, date, row, exercises) {
+function dayEditor(old, ctx, date, row, exercises, general, letter) {
   // Новый узел — чтобы обработчики прошлого дня не копились.
   const body = old.cloneNode(false);
   old.replaceWith(body);
-  const general = exercises.filter((e) => e.active).sort((a, b) => a.position - b.position || a.id - b.id)
-    .map(({ id, name, sets, target_reps }) => ({ id, name, sets, target_reps }));
+  const generalName = letter ? `комплекс ${letter} (по очереди)` : 'общий комплекс';
   const key = (p) => JSON.stringify(p.map((x) => [x.id, x.sets, x.target_reps ?? null]));
   const custom = Boolean(row?.plan) && key(row.plan) !== key(general);
   const base = row?.plan ?? general;
@@ -284,7 +347,7 @@ function dayEditor(old, ctx, date, row, exercises) {
     body.innerHTML = String(html`
       ${row && row.status !== 'training' ? html`<p class="notice">Сейчас этот день: ${DAY_STATUS[row.status]?.toLowerCase() ?? 'не задан'}.
         Сохранишь план — станет тренировкой.</p>` : ''}
-      <p class="label">${custom ? 'У этого дня свой план.' : 'Сейчас: общий комплекс. Поменяй, что нужно, и сохрани.'}</p>
+      <p class="label">${custom ? 'У этого дня свой план.' : `Сейчас: ${generalName}. Поменяй, что нужно, и сохрани.`}</p>
       ${items.map((x, i) => html`<div class="ex-edit dp-item" data-i="${i}">
         <label class="check"><input type="checkbox" data-k="on" ${x.on ? html`checked` : ''}><span class="em">${x.name}${unitOf(x, exercises) === 'sec' ? ' · на время' : ''}</span></label>
         <div class="grid-2">
@@ -299,7 +362,7 @@ function dayEditor(old, ctx, date, row, exercises) {
       <textarea id="dp-note" class="input textarea" rows="2" maxlength="500" placeholder="Например: подтягивания широким хватом">${row?.note ?? ''}</textarea>
       <p class="error" id="dp-error" role="alert"></p>
       <button type="button" class="btn" id="dp-save">Сохранить план на ${dayTitle(date)}</button>
-      ${custom || row?.note ? html`<button type="button" class="ghost" id="dp-reset">Вернуть общий комплекс</button>` : ''}`);
+      ${custom || row?.note ? html`<button type="button" class="ghost" id="dp-reset">Вернуть ${generalName}</button>` : ''}`);
   };
   draw();
 
@@ -325,16 +388,14 @@ function dayEditor(old, ctx, date, row, exercises) {
       try {
         await ctx.api.setDayPlan(ctx.athleteId, date, plan, body.querySelector('#dp-note').value);
         ctx.toast(`План на ${dayTitle(date)} сохранён`);
-        const [fresh] = await ctx.api.days(ctx.athleteId, date, date);
-        dayEditor(body, ctx, date, fresh ?? null, await ctx.api.exercises());
+        dayEditor(body, ctx, date, ...await dayData(ctx.api, ctx.athleteId, date));
       } catch (x) { err.textContent = x.message; }
     }
     if (e.target.id === 'dp-reset') {
       try {
         await ctx.api.setDayPlan(ctx.athleteId, date, null, null);
-        ctx.toast(`${dayTitle(date)}: общий комплекс`);
-        const [fresh] = await ctx.api.days(ctx.athleteId, date, date);
-        dayEditor(body, ctx, date, fresh ?? null, await ctx.api.exercises());
+        ctx.toast(`${dayTitle(date)}: ${generalName}`);
+        dayEditor(body, ctx, date, ...await dayData(ctx.api, ctx.athleteId, date));
       } catch (x) { err.textContent = x.message; }
     }
   });
