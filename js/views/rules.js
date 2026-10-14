@@ -8,8 +8,8 @@ import { POINTS, signed } from '../logic.js';
 const PER_EX = [
   { k: 'rep', label: 'За повтор', step: 0.1 },
   { k: 'set', label: 'За полный подход', step: 0.1 },
-  { k: 'over', label: 'За повтор сверх цели', step: 0.1 },
-  { k: 'cap', label: 'Потолок сверх цели в день', int: true },
+  { k: 'over', label: 'Сверх цели, за повтор', step: 0.1 },
+  { k: 'cap', label: 'Потолок в день', int: true },
 ];
 
 // int — целое число в базе; иначе можно дробное (шаг step).
@@ -20,7 +20,7 @@ const GROUPS = [
     { k: 'streak_max', label: 'Потолок множителя', step: 0.1, min: 1 },
   ] },
   { title: 'Штраф', note: 'Пропуск — тренировочный день, где не сделан хоть один подход плана. Снимается процент от баланса, ниже нуля не падает.', fields: [
-    { k: 'miss_penalty_pct', label: 'Минус за пропуск, % баланса', step: 1, max: 100 },
+    { k: 'miss_penalty_pct', label: 'Штраф, % баланса', step: 1, max: 100 },
   ] },
   { title: 'Магазин', note: 'Пустой лимит — без ограничений.', fields: [
     { k: 'rest_day_price', label: 'Цена выходного', int: true, min: 1 },

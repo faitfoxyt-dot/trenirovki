@@ -199,8 +199,12 @@ export const api = {
     return check(await sb.rpc('set_day_plan', { p_athlete: athleteId, p_date: date, p_plan: plan, p_note: note ?? null }));
   },
 
-  async grantPoints(athleteId, amount, note) {
-    return check(await sb.rpc('grant_points', { p_athlete: athleteId, p_amount: amount, p_note: note }));
+  async grantPoints(athleteId, amount, note, rating) {
+    return check(await sb.rpc('grant_points', { p_athlete: athleteId, p_amount: amount, p_note: note, p_rating: Boolean(rating) }));
+  },
+
+  async buyPhone() {
+    return check(await sb.rpc('buy_phone'));
   },
 
   async deleteIdea(id) {

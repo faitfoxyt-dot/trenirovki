@@ -318,3 +318,50 @@ input[type=date].input { display: block; padding-top: 10px; padding-bottom: 10px
 .idea .ghost.icon { flex: none; }
 .ledger .row-gap { align-items: center; }
 .del-led { width: 32px; height: 32px; min-height: 32px; padding: 0; font-size: 12px; flex: none; }
+
+/* v3.3: покупка телефона */
+.hidden-card { display: none; }
+.phone-btn {
+  position: relative; overflow: hidden; width: 100%; min-height: 60px; margin-top: 4px;
+  border: 1.5px solid var(--line-2); border-radius: 16px; background: var(--bar); color: var(--muted);
+  font: 600 15px/1.2 'Unbounded', sans-serif; cursor: not-allowed;
+}
+.phone-fill {
+  position: absolute; inset: 0 auto 0 0; width: var(--p, 0%);
+  background: linear-gradient(90deg, rgba(198, 244, 50, .10), rgba(198, 244, 50, .28));
+}
+.phone-text { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 10px; padding: 0 16px; }
+.phone-text .ic { width: 22px; height: 22px; }
+.phone-ready {
+  border-color: var(--accent); color: var(--bg); cursor: pointer;
+  background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+  box-shadow: 0 0 0 0 rgba(198, 244, 50, .55); animation: phone-pulse 1.8s ease-out infinite;
+}
+.phone-ready .phone-fill {
+  width: 40%; left: -40%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, .55), transparent);
+  animation: phone-shine 2.4s ease-in-out infinite;
+}
+.phone-ready:active { transform: scale(.98); }
+.phone-ready:disabled { animation: none; opacity: .7; }
+@keyframes phone-pulse { 70% { box-shadow: 0 0 0 14px rgba(198, 244, 50, 0); } 100% { box-shadow: 0 0 0 0 rgba(198, 244, 50, 0); } }
+@keyframes phone-shine { 0% { left: -40%; } 60%, 100% { left: 110%; } }
+.phone-done { align-items: center; text-align: center; border-color: var(--accent);
+  background: radial-gradient(circle at 50% 0%, rgba(198, 244, 50, .16), var(--surface) 70%); }
+.phone-done-ic { font-size: 44px; line-height: 1; }
+.confetti { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 50; }
+.confetti i {
+  position: absolute; top: -12px; width: 8px; height: 14px; border-radius: 2px;
+  animation: confetti-fall 2.2s cubic-bezier(.2, .6, .4, 1) forwards;
+}
+@keyframes confetti-fall { to { transform: translate(var(--x), 105vh) rotate(var(--r)); opacity: .9; } }
+@media (prefers-reduced-motion: reduce) {
+  .phone-ready, .phone-ready .phone-fill, .confetti i { animation: none; }
+}
+a.chip-link { color: var(--accent); text-decoration: none; border: 1px solid var(--accent); background: transparent; }
+.phone-lines { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; }
+.phone-lines small { font: 500 12px/1.2 'Onest', sans-serif; opacity: .8; }
+.grid-2 > .field { display: flex; flex-direction: column; justify-content: flex-end; }
+#dp-body { display: flex; flex-direction: column; gap: 12px; }
+.ex-rules { padding-bottom: 4px; }
+.ex-rules .num-in { width: 100%; text-align: left; }

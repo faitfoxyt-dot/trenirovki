@@ -51,7 +51,8 @@ export async function render(el, ctx, args, alive) {
     <header class="stack-8">
       <p class="sub">Подходы, которые ждут твоего решения</p>
       <h1 class="h1">Проверка</h1>
-      <div class="chips"><span class="chip" id="pending-count">Ждут проверки: ${pending.length}</span></div>
+      <div class="chips"><span class="chip" id="pending-count">Ждут проверки: ${pending.length}</span>
+        <a class="chip chip-link" href="#/goal">Очки вручную →</a></div>
     </header>
     ${sick.map((s) => html`<section class="card sick-card" data-sick="${s.id}">
       <div class="row"><span class="chip chip-bad">Больничный</span>${many ? html`<span class="label">${athleteName(s.athlete_id)}</span>` : ''}</div>
@@ -126,7 +127,7 @@ function formHtml(l, decision = null) {
       <input class="input" id="fix-${l.id}" type="number" inputmode="numeric" pattern="[0-9]*" min="0" max="1000" placeholder="твоё число">
     </div>
     <label class="label" for="cm-${l.id}">Комментарий</label>
-    <input class="input" id="cm-${l.id}" type="text" maxlength="300" placeholder="Коротко: что не так или что хорошо">
+    <input class="input" id="cm-${l.id}" type="text" maxlength="300" placeholder="Что не так или что хорошо">
     <p class="error" role="alert"></p>
     <button type="button" class="btn save" ${decision ? '' : html`disabled`}>Сохранить решение</button>`;
 }

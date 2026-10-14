@@ -82,7 +82,7 @@ export async function render(el, ctx, args, alive) {
 
 function restText(status, beforeStart) {
   if (beforeStart) return 'Старт ещё не наступил. Подходы можно будет отмечать со дня старта.';
-  if (status === 'rest' || status === 'bought') return 'Отдых по плану. Серию не рвёт.';
+  if (status === 'rest' || status === 'bought') return 'Отдых по плану. Серию не рвёт и не продлевает.';
   if (status === 'sick') return 'Больничный. Восстанавливайся, очки не тратятся.';
   if (status === 'busy') return 'День без задания по договорённости.';
   return 'Тимур ещё не задал план на этот день.';
