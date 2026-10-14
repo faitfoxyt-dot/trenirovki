@@ -20,6 +20,7 @@
 | `vendor/supabase.js` | Готовый ESM-бандл `@supabase/supabase-js` 2.117.3 (esbuild) |
 | `supabase/migrations/` | Схема базы, права (RLS) и серверные функции |
 | `supabase/make-admin.sql` | Выдать роль админа своей почте |
+| `supabase/apply-migrations.sh`, `.github/workflows/migrations.yml` | После мержа в `main` сами выполняют новые файлы миграций в Supabase (секрет `SUPABASE_DB_URL`); что выполнено, помнит `ops.migrations` |
 | `supabase/functions/bot/` | Edge Function бота: шлёт в Telegram то, что отдаёт `bot_outbox()` |
 
 ## Правила, которые держит база

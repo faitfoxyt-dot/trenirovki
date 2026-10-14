@@ -100,20 +100,23 @@ const balance = (a) => db.ledger.filter((x) => x.athlete_id === a).reduce((s, x)
 const rating = (a) => db.ledger.filter((x) => x.athlete_id === a).reduce((s, x) => s + x.rating, 0);
 const hasKey = (a, key) => db.ledger.some((x) => x.athlete_id === a && x.key === key);
 
-function streakAt(a, date) {
+// Серия считается по дням того же режима (тестовый или настоящий), что и сам день, — как streak_in в базе.
+const isTestDay = (date) => isCal(rulesFor(date));
+function streakIn(a, date, test) {
   const start = db.settings.start_date;
   if (!start) return 0;
   let n = 0;
   for (let d = date, i = 0; d >= start && i < 400; d = addDays(d, -1), i += 1) {
-    if (dayStatusOf(a, d) !== 'training') continue;
+    if (isTestDay(d) !== test || dayStatusOf(a, d) !== 'training') continue;
     if (dayDone(a, d)) n += 1;
     else if (d < today()) break;
   }
   return n;
 }
+const streakAt = (a, date) => streakIn(a, date, isTestDay(date));
 
-// Серия дня, если он будет сделан: полные дни до него + он сам — как day_streak в базе.
-const dayStreak = (a, date) => streakAt(a, addDays(date, -1)) + 1;
+// Серия дня, если он будет сделан: дни того же режима до него + он сам — как day_streak в базе.
+const dayStreak = (a, date) => streakIn(a, addDays(date, -1), isTestDay(date)) + 1;
 
 function streakMult(r, s) {
   if (!r || r.streak_from == null || r.streak_step == null || s < r.streak_from) return 1;
