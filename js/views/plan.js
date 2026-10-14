@@ -1,4 +1,4 @@
-// «План» (админ): старт калибровки, шаблон недели, комплекс и правка одного дня.
+// «План» (админ): старт, шаблон недели, комплекс из списка упражнений, план на день, очистка.
 
 import { html, WEEKDAYS, dayTitle, addDays } from '../util.js';
 import { DAY_STATUS } from '../logic.js';
@@ -10,15 +10,25 @@ const TEMPLATE_OPTIONS = [
   { value: 'busy', label: 'Занят' },
 ];
 const DAY_OPTIONS = ['training', 'rest', 'sick', 'busy'];
+const CLEAR = [
+  { k: 'sets', label: 'Подходы (и их теоретические очки)' },
+  { k: 'points', label: 'Записи очков' },
+  { k: 'purchases', label: 'Покупки выходных' },
+  { k: 'sick', label: 'Запросы больничного' },
+  { k: 'ideas', label: 'Идеи' },
+  { k: 'mornings', label: 'Утро' },
+  { k: 'days', label: 'Планы, задания и статусы дней' },
+];
 
 export async function render(el, ctx, args, alive) {
   const { api, clock, settings, me } = ctx;
   const [template, exercises] = await Promise.all([api.weekTemplate(), api.exercises()]);
   if (!alive()) return;
 
-  const rows = exercises.filter((e) => e.active).map((e) => ({ ...e }));
+  // Список упражнений ведётся в «Правилах»; здесь из него собирается общий комплекс.
+  const catalog = exercises.filter((e) => !e.archived);
+  const rows = catalog.filter((e) => e.active).map(({ id, sets, target_reps }) => ({ id, sets, target_reps }));
   const athleteName = ctx.athletes.find((a) => a.id === ctx.athleteId)?.name || 'без имени';
-  const hidden = exercises.filter((e) => !e.active);
 
   el.innerHTML = String(html`
     <header class="stack-8">
@@ -27,12 +37,12 @@ export async function render(el, ctx, args, alive) {
     </header>
 
     <section class="card">
-      <h2 class="h2">Калибровка</h2>
-      <p class="label">Первая неделя без очков: друг просто пишет, сколько сделал. По этим числам ты потом ставишь цели.</p>
-      <label class="label" for="start-date">Старт калибровки</label>
+      <h2 class="h2">Старт</h2>
+      <p class="label">С этого дня друг отмечает подходы. До него дни закрыты.</p>
+      <label class="label" for="start-date">Дата старта</label>
       <input class="input" id="start-date" type="date" value="${settings.start_date ?? ''}">
       <p class="label ok" id="settings-saved" aria-live="polite"></p>
-      <p class="label">Выключить калибровку и задать очки — во вкладке «Правила».</p>
+      <p class="label">Тестовый период и очки — во вкладке «Правила».</p>
     </section>
 
     <section class="card">
@@ -51,16 +61,13 @@ export async function render(el, ctx, args, alive) {
 
     <section class="card">
       <h2 class="h2">Комплекс тренировки</h2>
-      <p class="label">Один комплекс на все тренировочные дни. Пустая цель — калибровка: друг просто пишет, сколько сделал.
-        Изменения попадут в дни, которые друг ещё не открывал.</p>
+      <p class="label">Один комплекс на все тренировочные дни. Пустая цель — друг просто пишет, сколько сделал.
+        Изменения попадут в дни, которые друг ещё не открывал. Новые упражнения и очки — во вкладке «Правила».</p>
       <div id="ex-list"></div>
-      <button type="button" class="ghost" id="ex-add">+ Упражнение</button>
+      ${catalog.length ? html`<button type="button" class="ghost" id="ex-add">+ Упражнение из списка</button>`
+        : html`<p class="label">Список упражнений пуст. Добавь их во вкладке «Правила».</p>`}
       <p class="error" id="ex-error" role="alert"></p>
       <button type="button" class="btn" id="ex-save">Сохранить комплекс</button>
-      ${hidden.length ? html`<details class="hidden-ex"><summary class="label">Убранные упражнения: ${hidden.length}</summary>
-        ${hidden.map((e) => html`<div class="row"><span>${e.name}</span>
-          <button type="button" class="ghost" data-restore="${e.id}">Вернуть</button></div>`)}
-      </details>` : ''}
     </section>
 
     <section class="card">
@@ -88,12 +95,17 @@ export async function render(el, ctx, args, alive) {
 
     <section class="card">
       <h2 class="h2">Очистить данные атлета</h2>
-      <p class="label">Стирает подходы, дни, утро, очки, покупки, больничные и идеи выбранного атлета. Аккаунт, комплекс и правила
-        остаются. Нужно, чтобы убрать следы тестов. Вернуть нельзя.</p>
+      <p class="label">Сотри только нужное: выбери, что и за какие дни. Пустые даты — за всё время.
+        Аккаунт, список упражнений, комплекс и правила не трогаются. Вернуть нельзя.</p>
+      <div class="stack-4">${CLEAR.map((c) => html`<label class="check check-wide"><input type="checkbox" data-clear="${c.k}"><span>${c.label}</span></label>`)}</div>
+      <div class="grid-2">
+        <div class="field"><label class="label" for="clear-from">С</label><input class="input" id="clear-from" type="date"></div>
+        <div class="field"><label class="label" for="clear-to">По</label><input class="input" id="clear-to" type="date"></div>
+      </div>
       <label class="label" for="reset-confirm">Чтобы подтвердить, впиши имя атлета: <b class="em">${athleteName}</b></label>
       <input class="input" id="reset-confirm" type="text" autocomplete="off">
       <p class="error" id="reset-error" role="alert"></p>
-      <button type="button" class="ghost ghost-bad" id="reset">Очистить всё у ${athleteName}</button>
+      <button type="button" class="ghost ghost-bad" id="reset">Стереть выбранное у ${athleteName}</button>
     </section>` : ''}
 
     <section class="card">
@@ -102,7 +114,7 @@ export async function render(el, ctx, args, alive) {
     </section>
   `);
 
-  // Калибровка
+  // Старт
   const savedNote = el.querySelector('#settings-saved');
   const saveSettings = async (patch) => {
     try {
@@ -121,19 +133,22 @@ export async function render(el, ctx, args, alive) {
     } catch (err) { ctx.toast(err.message); }
   }));
 
-  // Комплекс
+  // Комплекс: упражнения из списка, у каждого свои подходы и цель.
   const list = el.querySelector('#ex-list');
   const draw = () => {
     list.innerHTML = String(html`${rows.map((x, i) => html`<div class="ex-edit" data-i="${i}">
       <div class="field">
-        <label class="label" for="ex-name-${i}">Упражнение</label>
-        <input class="input" id="ex-name-${i}" data-k="name" type="text" maxlength="60" placeholder="Название" value="${x.name}">
+        <label class="label" for="ex-id-${i}">Упражнение</label>
+        <select class="input" id="ex-id-${i}" data-k="id">
+          ${catalog.map((e) => html`<option value="${e.id}" ${e.id === x.id ? html`selected` : ''}
+            ${e.id !== x.id && rows.some((r) => r.id === e.id) ? html`disabled` : ''}>${e.name}</option>`)}
+        </select>
       </div>
       <div class="grid-2">
         <div class="field"><label class="label" for="ex-sets-${i}">Подходов</label>
           <input class="input" id="ex-sets-${i}" data-k="sets" type="number" inputmode="numeric" min="1" max="10" value="${x.sets}"></div>
         <div class="field"><label class="label" for="ex-goal-${i}">Цель, повторов</label>
-          <input class="input" id="ex-goal-${i}" data-k="target_reps" type="number" inputmode="numeric" min="1" max="1000" placeholder="калибровка" value="${x.target_reps ?? ''}"></div>
+          <input class="input" id="ex-goal-${i}" data-k="target_reps" type="number" inputmode="numeric" min="1" max="1000" placeholder="без цели" value="${x.target_reps ?? ''}"></div>
       </div>
       <div class="row">
         <div class="row-gap">
@@ -146,11 +161,18 @@ export async function render(el, ctx, args, alive) {
   };
   draw();
 
+  list.addEventListener('change', (e) => {
+    const i = Number(e.target.closest('.ex-edit')?.dataset.i);
+    if (e.target.dataset.k !== 'id') return;
+    const ex = catalog.find((c) => c.id === Number(e.target.value));
+    rows[i] = { id: ex.id, sets: ex.sets, target_reps: ex.target_reps };
+    draw();
+  });
   list.addEventListener('input', (e) => {
     const i = Number(e.target.closest('.ex-edit')?.dataset.i);
     const k = e.target.dataset.k;
-    if (!k) return;
-    rows[i][k] = k === 'name' ? e.target.value : e.target.value === '' ? null : Number(e.target.value);
+    if (!k || k === 'id') return;
+    rows[i][k] = e.target.value === '' ? null : Number(e.target.value);
   });
   list.addEventListener('click', (e) => {
     const card = e.target.closest('.ex-edit');
@@ -163,43 +185,37 @@ export async function render(el, ctx, args, alive) {
       draw();
     }
     if (e.target.closest('[data-remove]')) {
-      if (rows[i].id) hidden.push({ ...rows[i], active: false, removed: true });
       rows.splice(i, 1);
       draw();
     }
   });
-  el.querySelector('#ex-add').addEventListener('click', () => {
-    rows.push({ name: '', sets: 3, target_reps: null, active: true });
+  el.querySelector('#ex-add')?.addEventListener('click', () => {
+    const ex = catalog.find((c) => !rows.some((r) => r.id === c.id));
+    if (!ex) { ctx.toast('Все упражнения из списка уже в комплексе'); return; }
+    rows.push({ id: ex.id, sets: ex.sets, target_reps: ex.target_reps });
     draw();
-    list.querySelector(`#ex-name-${rows.length - 1}`).focus();
   });
   el.querySelector('#ex-save').addEventListener('click', async () => {
     const error = el.querySelector('#ex-error');
-    const bad = rows.find((x) => !x.name.trim() || !Number.isInteger(x.sets) || x.sets < 1 || x.sets > 10
+    const bad = rows.find((x) => !Number.isInteger(x.sets) || x.sets < 1 || x.sets > 10
       || (x.target_reps !== null && (!Number.isInteger(x.target_reps) || x.target_reps < 1)));
     if (bad) {
-      error.textContent = 'У каждого упражнения нужно название и от 1 до 10 подходов; цель — целое число или пусто';
+      error.textContent = 'У каждого упражнения от 1 до 10 подходов; цель — целое число или пусто';
       return;
     }
     error.textContent = '';
     try {
       for (const [i, x] of rows.entries()) {
-        await api.saveExercise({ ...x, name: x.name.trim(), position: i, active: true });
+        const ex = catalog.find((c) => c.id === x.id);
+        await api.saveExercise({ ...ex, sets: x.sets, target_reps: x.target_reps, position: i, active: true });
       }
-      for (const x of hidden.filter((h) => h.removed)) {
-        await api.saveExercise({ ...x, active: false });
+      for (const ex of catalog.filter((c) => c.active && !rows.some((r) => r.id === c.id))) {
+        await api.saveExercise({ ...ex, active: false });
       }
       ctx.toast('Комплекс сохранён');
       ctx.refresh();
     } catch (err) { error.textContent = err.message; }
   });
-  el.querySelectorAll('[data-restore]').forEach((b) => b.addEventListener('click', async () => {
-    const ex = hidden.find((h) => h.id === Number(b.dataset.restore));
-    try {
-      await api.saveExercise({ ...ex, active: true, position: rows.length });
-      ctx.refresh();
-    } catch (err) { ctx.toast(err.message); }
-  }));
 
   // Один день
   el.querySelector('#one-apply')?.addEventListener('click', async () => {
@@ -231,11 +247,17 @@ export async function render(el, ctx, args, alive) {
   // Очистка
   el.querySelector('#reset')?.addEventListener('click', async () => {
     const err = el.querySelector('#reset-error');
+    const what = [...el.querySelectorAll('[data-clear]:checked')].map((c) => c.dataset.clear);
+    const from = el.querySelector('#clear-from').value;
+    const to = el.querySelector('#clear-to').value;
+    if (!what.length) { err.textContent = 'Отметь, что стереть'; return; }
+    if (from && to && from > to) { err.textContent = 'Дата «с» позже даты «по»'; return; }
     if (el.querySelector('#reset-confirm').value.trim() !== athleteName) { err.textContent = 'Имя не совпадает'; return; }
     err.textContent = '';
     try {
-      await api.resetAthlete(ctx.athleteId);
-      ctx.toast(`Данные ${athleteName} очищены`);
+      const res = await api.clearAthlete(ctx.athleteId, what, from, to);
+      const n = Object.values(res ?? {}).reduce((a, b) => a + b, 0);
+      ctx.toast(`Стёрто записей: ${n}`);
       ctx.refresh();
     } catch (e) { err.textContent = e.message; }
   });
@@ -253,7 +275,7 @@ function dayEditor(old, ctx, date, row, exercises) {
   const key = (p) => JSON.stringify(p.map((x) => [x.id, x.sets, x.target_reps ?? null]));
   const custom = Boolean(row?.plan) && key(row.plan) !== key(general);
   const base = row?.plan ?? general;
-  const items = exercises.filter((e) => e.active || base.some((b) => b.id === e.id)).map((e) => {
+  const items = exercises.filter((e) => !e.archived || base.some((b) => b.id === e.id)).map((e) => {
     const inPlan = base.find((b) => b.id === e.id);
     return { id: e.id, name: e.name, on: Boolean(inPlan), sets: inPlan?.sets ?? e.sets, target_reps: inPlan ? inPlan.target_reps : e.target_reps };
   });
@@ -272,10 +294,7 @@ function dayEditor(old, ctx, date, row, exercises) {
             <input class="input" id="dp-goal-${i}" data-k="target_reps" type="number" inputmode="numeric" min="1" max="1000" placeholder="без цели" value="${x.target_reps ?? ''}"></div>
         </div>
       </div>`)}
-      <div class="row-gap dp-new">
-        <input class="input" id="dp-new-name" type="text" maxlength="60" placeholder="Новое упражнение только на этот день" aria-label="Новое упражнение">
-        <button type="button" class="ghost" id="dp-new">Добавить</button>
-      </div>
+      <p class="label">Нужного упражнения нет — добавь его во вкладке «Правила».</p>
       <label class="label" for="dp-note">Задание дня (друг увидит на экране «Сегодня»)</label>
       <textarea id="dp-note" class="input textarea" rows="2" maxlength="500" placeholder="Например: подтягивания широким хватом">${row?.note ?? ''}</textarea>
       <p class="error" id="dp-error" role="alert"></p>
@@ -295,16 +314,6 @@ function dayEditor(old, ctx, date, row, exercises) {
   });
   body.addEventListener('click', async (e) => {
     const err = body.querySelector('#dp-error');
-    if (e.target.id === 'dp-new') {
-      const name = body.querySelector('#dp-new-name').value.trim();
-      if (!name) { err.textContent = 'Напиши название'; return; }
-      try {
-        // Упражнение на один день не попадает в общий комплекс.
-        const ex = await ctx.api.saveExercise({ name, sets: 3, target_reps: null, position: 999, active: false });
-        items.push({ id: ex.id, name: ex.name, on: true, sets: 3, target_reps: null });
-        draw();
-      } catch (x) { err.textContent = x.message; }
-    }
     if (e.target.id === 'dp-save') {
       const plan = items.filter((x) => x.on).map(({ id, sets, target_reps }) => ({ id, sets, target_reps }));
       if (!plan.length) { err.textContent = 'Отметь хотя бы одно упражнение'; return; }

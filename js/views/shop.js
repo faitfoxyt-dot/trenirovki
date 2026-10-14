@@ -42,7 +42,7 @@ export async function render(el, ctx, args, alive) {
     </header>
 
     <section class="card">
-      <div class="row"><h2 class="h2">Выходной</h2><span class="chip">${price !== null ? POINTS(price) : 'цена после калибровки'}</span></div>
+      <div class="row"><h2 class="h2">Выходной</h2><span class="chip">${price !== null ? POINTS(price) : 'цена не задана'}</span></div>
       <p class="label">Отдых вместо тренировки. Серию не рвёт и не продлевает, но тратит баланс — телефон отодвигается.</p>
       ${isAdmin ? '' : html`
         <label class="label" for="buy-day">На какой день</label>
@@ -144,7 +144,7 @@ export async function render(el, ctx, args, alive) {
 }
 
 function buyHint(r, price, balance, isAdmin) {
-  if (price === null) return 'Цену выходного Тимур поставит после калибровки.';
+  if (price === null) return 'Цену выходного Тимур ещё не поставил.';
   const parts = [];
   if (!isAdmin && balance < price) parts.push(`Не хватает ${POINTS(price - balance)}.`);
   parts.push('Купить можно только заранее, до начала дня. Отменить — тоже до начала дня, очки вернутся.');

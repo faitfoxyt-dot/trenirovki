@@ -26,13 +26,13 @@ export async function render(el, ctx, args, alive) {
     <header class="stack-8">
       <p class="sub">${isAdmin ? 'Путь друга к телефону' : 'Твой путь к телефону'}</p>
       <h1 class="h1">Цель</h1>
-      ${isCalibration(r) ? html`<div class="chips"><span class="chip">Калибровка · очки не начисляются</span></div>` : ''}
+      ${isCalibration(r) ? html`<div class="chips"><span class="chip">Тестовый период · очки не начисляются</span></div>` : ''}
     </header>
 
     <section class="card">
       <div class="row"><h2 class="h2">Телефон</h2><span class="label">${price ? `${pct}%` : ''}</span></div>
       <p class="big-line"><span class="big">${w.balance}</span>
-        <span class="label">${price ? `из ${price} очков` : 'из [цена после калибровки]'}</span></p>
+        <span class="label">${price ? `из ${price} очков` : 'цена телефона ещё не задана'}</span></p>
       <div class="bar" role="progressbar" aria-label="Путь к телефону" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}">
         <span class="bar-fill" style="width: ${pct}%"></span>
         ${MILESTONES.map((m) => html`<span class="tick ${pct >= m ? 'tick-on' : ''}" style="left: ${m}%"></span>`)}
@@ -54,7 +54,7 @@ export async function render(el, ctx, args, alive) {
 
     <section class="card">
       <h2 class="h2">История</h2>
-      ${rows.length ? html`<ul class="ledger">${group(rows).map(rowHtml)}</ul>`
+      ${rows.length ? html`<ul class="ledger">${group(rows).map((x) => rowHtml(x, isAdmin))}</ul>`
         : html`<p class="label">Пока пусто. Здесь будут начисления за подтверждённые подходы, бонусы, штрафы и покупки — с датой и причиной.</p>`}
     </section>
 
@@ -66,7 +66,7 @@ export async function render(el, ctx, args, alive) {
 
     ${isAdmin ? html`<section class="card">
       <h2 class="h2">Начислить или снять очки</h2>
-      ${w.theory ? html`<p class="label">Теоретически за калибровку: <b class="em">${POINTS(w.theory)}</b> по текущим числам правил.
+      ${w.theory ? html`<p class="label">Теоретически за тестовый период: <b class="em">${POINTS(w.theory)}</b> по текущим числам правил.
         Это видишь только ты — можешь начислить их или часть вручную.</p>` : ''}
       <div class="grid-2">
         <div class="field"><label class="label" for="grant-amount">Очки (минус — снять)</label>
@@ -79,6 +79,15 @@ export async function render(el, ctx, args, alive) {
       <p class="label">Плюс идёт в баланс и рейтинг, минус — только из баланса, ниже нуля не уходит.</p>
     </section>` : ''}
   `);
+
+  el.querySelectorAll('[data-led]').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm('Удалить эту запись очков? Баланс и рейтинг пересчитаются.')) return;
+    try {
+      await api.deleteLedger(Number(b.dataset.led));
+      ctx.toast('Запись удалена');
+      ctx.refresh();
+    } catch (e) { ctx.toast(e.message); }
+  }));
 
   el.querySelector('#grant')?.addEventListener('click', async () => {
     const amount = Number(el.querySelector('#grant-amount').value);
@@ -113,7 +122,10 @@ function group(rows) {
   return out;
 }
 
-function rowHtml(x) {
+// Админ может удалить запись крестиком.
+const del = (x, isAdmin) => (isAdmin ? html`<button type="button" class="ghost icon del-led" data-led="${x.id}" aria-label="Удалить запись">✕</button>` : '');
+
+function rowHtml(x, isAdmin) {
   if (x.kind === 'day') {
     const cls = x.amount > 0 ? 'ok' : x.amount < 0 ? 'bad' : '';
     return html`<li>
@@ -121,7 +133,7 @@ function rowHtml(x) {
       <p class="label">${dayTitle(x.date)}</p>
       <details class="more"><summary class="label">Подробнее</summary>
         <ul class="sub-ledger">${x.items.map((i) => html`<li class="row"><span>${i.note}</span>
-          <span class="nowrap">${signed(i.amount)}</span></li>`)}</ul>
+          <span class="row-gap nowrap"><span>${signed(i.amount)}</span>${del(i, isAdmin)}</span></li>`)}</ul>
       </details>
     </li>`;
   }
@@ -129,7 +141,7 @@ function rowHtml(x) {
   const cls = milestone ? 'ok' : x.amount > 0 ? 'ok' : x.amount < 0 ? 'bad' : '';
   const ratingNote = x.rating !== x.amount && x.rating !== 0 ? ` · рейтинг ${signed(x.rating)}` : '';
   return html`<li class="${milestone ? 'led-star' : ''}">
-    <div class="row"><span>${x.note}</span><b class="${cls} nowrap">${milestone ? '★' : signed(x.amount)}</b></div>
+    <div class="row"><span>${x.note}</span><span class="row-gap nowrap"><b class="${cls}">${milestone ? '★' : signed(x.amount)}</b>${del(x, isAdmin)}</span></div>
     <p class="label">${dayTitle(x.date)}${ratingNote}</p>
   </li>`;
 }
@@ -139,15 +151,14 @@ function howItWorks(r) {
   const n = (v) => (v === null || v === undefined ? null : Number(v));
   const items = [];
   items.push(cal
-    ? 'Сейчас калибровка: очки не начисляются. Числа правил Тимур поставит после неё.'
-    : 'Очки — только за подходы, которые подтвердил Тимур: за каждый повтор, за подход, где цель выполнена, и за повторы сверх цели. Числа у каждого упражнения свои.');
+    ? 'Сейчас тестовый период: очки не начисляются.'
+    : 'Очки — только за подходы, которые подтвердил Тимур: за каждый повтор, за подход, где цель выполнена, и за повторы сверх цели (с потолком в день). Числа у каждого упражнения свои.');
   items.push('Серия — тренировочные дни подряд, где сделан весь план. Выходные, купленные дни и больничный её не продлевают и не рвут.'
     + (!cal && r.streak_from && r.streak_step
       ? ` С ${r.streak_from}-го дня серии все очки за подход умножаются: +${n(r.streak_step)} в день, максимум ×${n(r.streak_max) ?? '∞'}.` : ''));
-  items.push('Рост: если лучший подход недели в упражнении больше, чем на прошлой неделе, — бонус.');
   items.push(!cal && n(r.miss_penalty_pct) > 0
     ? `Пропуск — не сделан хоть один подход плана. Штраф: ${n(r.miss_penalty_pct)}% от баланса.`
     : 'Пропуск — не сделан хоть один подход плана. За него штраф: процент от баланса.');
-  items.push('Рейтинг — всё, что заработано. Покупки и штрафы трогают только баланс.');
+  items.push('Рейтинг — всё, что заработано за всё время. Покупки и штрафы его не уменьшают, только баланс.');
   return items.map((t) => html`<li>${t}</li>`);
 }

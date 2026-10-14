@@ -47,8 +47,8 @@ export async function render(el, ctx, args, alive) {
       <h1 class="h1">${isToday ? 'Сегодня' : dayTitle(date)}</h1>
       <div class="chips">
         ${isAdmin && isToday ? html`<span class="chip">${dayTitle(date)}</span>` : ''}
-        ${isCalibration(ctx.rules?.current) ? html`<span class="chip">Калибровка · очки не начисляются</span>` : ''}
-        ${beforeStart ? html`<span class="chip chip-warn">Старт калибровки ${shortDate(settings.start_date)}</span>` : ''}
+        ${isCalibration(ctx.rules?.current) ? html`<span class="chip">Тестовый период · очки не начисляются</span>` : ''}
+        ${beforeStart ? html`<span class="chip chip-warn">Старт ${shortDate(settings.start_date)}</span>` : ''}
       </div>
     </header>
 
@@ -81,7 +81,7 @@ export async function render(el, ctx, args, alive) {
 }
 
 function restText(status, beforeStart) {
-  if (beforeStart) return 'Калибровка ещё не началась. Подходы можно будет отмечать со дня старта.';
+  if (beforeStart) return 'Старт ещё не наступил. Подходы можно будет отмечать со дня старта.';
   if (status === 'rest' || status === 'bought') return 'Отдых по плану. Серию не рвёт.';
   if (status === 'sick') return 'Больничный. Восстанавливайся, очки не тратятся.';
   if (status === 'busy') return 'День без задания по договорённости.';

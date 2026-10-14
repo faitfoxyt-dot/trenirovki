@@ -115,7 +115,7 @@ function detailHtml(d, clock, exercises, showTheory) {
     <div class="row"><h2 class="h2">${dayTitle(d.date)}</h2><span class="chip day-chip-${d.state}">${DAY_STATE[d.state]}</span></div>
     ${!isPast ? html`<p class="label">${d.status ? `План: ${DAY_STATUS[d.status].toLowerCase()}.` : 'План на этот день ещё не задан.'}
       Статус дня задаёт Тимур в шаблоне недели или отдельно для дня.</p>` : ''}
-    ${isPast && d.state === 'before' ? html`<p class="label">До старта калибровки.</p>` : ''}
+    ${isPast && d.state === 'before' ? html`<p class="label">До старта.</p>` : ''}
     ${isPast && d.state === 'missed' ? html`<p class="label">${d.counts && d.counts.done
       ? `Пропуск: сделано ${d.counts.done} из ${d.counts.total} подходов плана.` : 'Тренировочный день без отметок.'}</p>` : ''}
     ${d.row?.note && d.status === 'training' ? html`<p class="label">Задание от Тимура: «${d.row.note}»</p>` : ''}

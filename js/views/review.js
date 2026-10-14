@@ -140,7 +140,7 @@ function wire(card, log, ctx, onCount) {
     const saved = await ctx.api.reviewSet(log.id, dec, confirmed, comment);
     done = true;
     onCount(-1);
-    // На калибровке очки не начисляются, но админ видит, сколько было бы.
+    // В тестовый период очки не начисляются, но админ видит, сколько было бы.
     let theory = '';
     if (saved.points === null && saved.review !== 'rejected') {
       const t = (await ctx.api.theory(log.athlete_id, log.date, log.date)).find((x) => x.set_id === log.id);
