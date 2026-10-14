@@ -55,11 +55,14 @@ export function dayState({ date, today, startDate, status, logs, plan }) {
   return date < today ? 'missed' : 'planned';
 }
 
-// Сколько подходов плана отмечено и сколько всего — как day_counts в базе.
+// Подход засчитан, если в нём больше 0 повторов: до проверки — по числу друга,
+// после — по числу Тимура (у отклонённого это 0). Как в базе.
+export const setDone = (l) => (l.confirmed ?? l.claimed ?? 0) > 0;
+
+// Сколько подходов плана засчитано и сколько всего — как day_counts в базе.
 export function dayCounts(plan, logs) {
   const total = plan.reduce((s, e) => s + e.sets, 0);
-  const done = logs.filter((l) => l.claimed !== null && l.claimed !== undefined
-    && plan.some((e) => e.id === l.exercise_id && l.set_no <= e.sets)).length;
+  const done = logs.filter((l) => setDone(l) && plan.some((e) => e.id === l.exercise_id && l.set_no <= e.sets)).length;
   return { done, total };
 }
 
@@ -86,7 +89,7 @@ export function reviewNote(log) {
   if (!log || log.claimed === null || log.claimed === undefined) return '';
   if (log.review === 'pending') return 'На проверке';
   const pts = setPoints(log);
-  const tail = pts === null ? '' : ` · ${signed(pts)}`;
+  const tail = pts === null ? '' : ` · ${signed(pts)}${multTag(log.mult)}`;
   if (log.review === 'accepted') return `Принято: ${log.confirmed}${tail}`;
   if (log.review === 'corrected') return `Исправлено: ${log.confirmed}${tail}`;
   return 'Отклонено';
@@ -96,6 +99,11 @@ export function reviewNote(log) {
 export function setPoints(log) {
   if (log?.points === null || log?.points === undefined) return null;
   return log.points;
+}
+
+// Множитель серии рядом с очками: « (серия ×1.5)», при ×1 — ничего.
+export function multTag(mult) {
+  return Number(mult) > 1 ? ` (серия ×${Number(mult)})` : '';
 }
 
 export function signed(n) {

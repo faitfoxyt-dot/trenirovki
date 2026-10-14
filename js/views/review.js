@@ -2,7 +2,7 @@
 // отклонить, комментарий. Очки за подход база считает в момент решения.
 
 import { html, dayTitle } from '../util.js';
-import { MUSCLES, caption, setPoints, signed } from '../logic.js';
+import { MUSCLES, caption, setPoints, signed, multTag } from '../logic.js';
 
 const DECISIONS = [
   { key: 'accepted', label: 'Принять' },
@@ -18,7 +18,7 @@ const SAVED_TEXT = {
 
 function pointsTail(l) {
   const p = setPoints(l);
-  return p === null ? '' : ` · ${signed(p)}`;
+  return p === null ? '' : ` · ${signed(p)}${multTag(l.mult)}`;
 }
 
 export async function render(el, ctx, args, alive) {
@@ -145,7 +145,7 @@ function wire(card, log, ctx, onCount) {
     let theory = '';
     if (saved.points === null && saved.review !== 'rejected') {
       const t = (await ctx.api.theory(log.athlete_id, log.date, log.date)).find((x) => x.set_id === log.id);
-      if (t) theory = ` · в теории ${signed(t.points)}`;
+      if (t) theory = ` · в теории ${signed(t.points)}${multTag(t.mult)}`;
     }
     box.innerHTML = String(html`<p class="saved ${saved.review}">${SAVED_TEXT[saved.review](saved)}${theory}${saved.comment ? html` · ${saved.comment}` : ''}</p>
       <button type="button" class="ghost again">Изменить решение</button>`);

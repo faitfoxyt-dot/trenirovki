@@ -1,7 +1,7 @@
 // «Календарь»: месяц, цвет дня по статусу, тап — подробности дня.
 
 import { html, monthKey, shiftMonth, monthTitle, monthDays, isoDow, dayTitle, WD_SHORT } from '../util.js';
-import { DAY_STATE, DAY_STATUS, MUSCLES, REVIEW, effectiveStatus, dayState, dayCounts, setPoints, signed } from '../logic.js';
+import { DAY_STATE, DAY_STATUS, MUSCLES, REVIEW, effectiveStatus, dayState, dayCounts, setPoints, signed, multTag } from '../logic.js';
 
 const LEGEND = ['confirmed', 'pending', 'missed', 'sick', 'rest', 'bought', 'busy', 'planned'];
 
@@ -38,7 +38,7 @@ export async function render(el, ctx, args, alive) {
     const state = dayState({ date, today: clock.today, startDate: settings.start_date, status, logs: dayLogs, plan });
     const th = theory.filter((t) => t.date === date);
     return [date, { date, row, status, state, logs: dayLogs, morning: mornings.find((m) => m.date === date),
-      theory: new Map(th.map((t) => [t.set_id, t.points])), counts: plan ? dayCounts(plan, dayLogs) : null }];
+      theory: new Map(th.map((t) => [t.set_id, t])), counts: plan ? dayCounts(plan, dayLogs) : null }];
   }));
 
   el.innerHTML = String(html`
@@ -105,10 +105,11 @@ function detailHtml(d, clock, exercises, showTheory) {
   const name = (id) => (plan.find((e) => e.id === id) ?? exercises.find((e) => e.id === id))?.name ?? 'Упражнение';
   const isPast = d.date <= clock.today;
   const sorted = d.logs.slice().sort((a, b) => a.exercise_id - b.exercise_id || a.set_no - b.set_no);
-  const theoryDay = [...d.theory.values()].reduce((a, b) => a + b, 0);
+  const theoryDay = [...d.theory.values()].reduce((a, t) => a + t.points, 0);
   const pts = (l) => {
-    if (setPoints(l) !== null) return ` · ${signed(setPoints(l))}`;
-    return showTheory && d.theory.has(l.id) ? ` · в теории ${signed(d.theory.get(l.id))}` : '';
+    if (setPoints(l) !== null) return ` · ${signed(setPoints(l))}${multTag(l.mult)}`;
+    const t = showTheory ? d.theory.get(l.id) : null;
+    return t ? ` · в теории ${signed(t.points)}${multTag(t.mult)}` : '';
   };
 
   return html`

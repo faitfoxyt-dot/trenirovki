@@ -20,11 +20,12 @@ export async function render(el, ctx, args, alive) {
     return;
   }
 
-  const [day, logs, mornings, sick] = await Promise.all([
+  const [day, logs, mornings, sick, wallet] = await Promise.all([
     api.openDay(date, isAdmin ? athleteId : undefined),
     api.logs(athleteId, date, date),
     api.mornings(athleteId, date, date),
     date === clock.today ? api.sickRequests(athleteId, date) : [],
+    date === clock.today ? api.wallet(isAdmin ? athleteId : undefined) : null,
   ]);
   if (!alive()) return;
 
@@ -48,6 +49,7 @@ export async function render(el, ctx, args, alive) {
       <div class="chips">
         ${isAdmin && isToday ? html`<span class="chip">${dayTitle(date)}</span>` : ''}
         ${isCalibration(ctx.rules?.current) ? html`<span class="chip">Тестовый период · очки не начисляются</span>` : ''}
+        ${wallet && !beforeStart ? streakChip(wallet, ctx.rules?.current) : ''}
         ${beforeStart ? html`<span class="chip chip-warn">Старт ${shortDate(settings.start_date)}</span>` : ''}
       </div>
     </header>
@@ -78,6 +80,12 @@ export async function render(el, ctx, args, alive) {
 
   if (editable) wireSets(el, ctx, date, state, mode);
   wireCopy(el);
+}
+
+// Серия и множитель, на который умножаются очки за сегодняшние подходы.
+function streakChip(w, r) {
+  const on = !isCalibration(r) && r?.streak_from && r?.streak_step;
+  return html`<span class="chip ${on && w.mult > 1 ? 'chip-on' : ''}">Серия ${w.streak}${on ? ` · сегодня очки ×${w.mult}` : ''}</span>`;
 }
 
 function restText(status, beforeStart) {

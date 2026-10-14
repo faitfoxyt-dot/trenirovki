@@ -61,7 +61,7 @@ export async function render(el, ctx, args, alive) {
       <div class="tile"><span class="big">${w.balance}</span><span class="label">Баланс</span></div>
       <div class="tile"><span class="big">${w.rating}</span><span class="label">Рейтинг</span></div>
       <div class="tile"><span class="big">${w.streak}</span>
-        <span class="label">Серия${w.mult > 1 ? html` <b class="ok">×${w.mult}</b>` : ''}</span></div>
+        <span class="label">Серия${r?.streak_from && r?.streak_step ? html` · сегодня <b class="${w.mult > 1 ? 'ok' : ''}">×${w.mult}</b>` : ''}</span></div>
     </div>
 
     ${isAdmin ? html`<section class="card" id="manual">
@@ -255,10 +255,12 @@ function howItWorks(r) {
     : 'Очки — только за подходы, которые подтвердил Тимур: за каждый повтор, за подход, где цель выполнена, и за повторы сверх цели (с потолком в день). Числа у каждого упражнения свои.');
   items.push('Серия — тренировочные дни подряд, где сделан весь план. Выходные, купленные дни и больничный её не продлевают и не рвут.'
     + (!cal && r.streak_from && r.streak_step
-      ? ` С ${r.streak_from}-го дня серии все очки за подход умножаются: +${n(r.streak_step)} в день, максимум ×${n(r.streak_max) ?? '∞'}.` : ''));
+      ? ` С ${r.streak_from}-го дня серии все очки за подход умножаются: в этот день ×${Math.round((1 + Number(r.streak_step)) * 100) / 100},`
+        + ` дальше +${n(r.streak_step)} в день, максимум ×${n(r.streak_max) ?? '∞'}. Множитель один на все подходы дня.` : ''));
+  const miss = 'Пропуск — не сделан хоть один подход плана. Подход с 0 повторов или отклонённый Тимуром не считается.';
   items.push(!cal && n(r.miss_penalty_pct) > 0
-    ? `Пропуск — не сделан хоть один подход плана. Штраф: ${n(r.miss_penalty_pct)}% от баланса.`
-    : 'Пропуск — не сделан хоть один подход плана. За него штраф: процент от баланса.');
+    ? `${miss} Штраф: ${n(r.miss_penalty_pct)}% от баланса.`
+    : `${miss} За него штраф: процент от баланса.`);
   items.push('Рейтинг — всё, что заработано за всё время. Покупки и штрафы его не уменьшают, только баланс.');
   return items.map((t) => html`<li>${t}</li>`);
 }
