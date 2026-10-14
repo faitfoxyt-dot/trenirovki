@@ -125,4 +125,66 @@ export const api = {
   async setDayStatus(athleteId, date, status) {
     return check(await sb.rpc('set_day_status', { p_athlete: athleteId, p_date: date, p_status: status }));
   },
+
+  // ── v3: очки, магазин, больничный, идеи ──
+
+  async rules() {
+    return check(await sb.rpc('rules_now'));
+  },
+
+  async saveRules(rules) {
+    return check(await sb.rpc('save_rules', { p: rules }));
+  },
+
+  async wallet(athleteId) {
+    return check(await sb.rpc('wallet', { p_athlete: athleteId ?? null }));
+  },
+
+  async ledger(athleteId, limit = 60) {
+    return check(await sb.from('ledger').select('*')
+      .eq('athlete_id', athleteId).order('id', { ascending: false }).limit(limit));
+  },
+
+  async purchases(athleteId, from) {
+    return check(await sb.from('purchases').select('*')
+      .eq('athlete_id', athleteId).eq('status', 'active').gte('date', from).order('date'));
+  },
+
+  async buyRestDay(date) {
+    return check(await sb.rpc('buy_rest_day', { p_date: date }));
+  },
+
+  async cancelPurchase(id) {
+    return check(await sb.rpc('cancel_purchase', { p_id: id }));
+  },
+
+  async sickRequests(athleteId, from) {
+    return check(await sb.from('sick_requests').select('*')
+      .eq('athlete_id', athleteId).gte('date', from).order('date', { ascending: false }));
+  },
+
+  async pendingSick() {
+    return check(await sb.from('sick_requests').select('*').eq('status', 'pending').order('created_at'));
+  },
+
+  async requestSick(note) {
+    return check(await sb.rpc('request_sick', { p_note: note ?? null }));
+  },
+
+  async decideSick(id, approve) {
+    return check(await sb.rpc('decide_sick', { p_id: id, p_approve: approve }));
+  },
+
+  async ideas(athleteId) {
+    return check(await sb.from('ideas').select('*')
+      .eq('athlete_id', athleteId).order('id', { ascending: false }).limit(50));
+  },
+
+  async addIdea(text) {
+    return check(await sb.rpc('add_idea', { p_text: text }));
+  },
+
+  async setIdeaStatus(id, status) {
+    return check(await sb.rpc('set_idea_status', { p_id: id, p_status: status }));
+  },
 };

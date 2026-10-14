@@ -6,6 +6,9 @@ import * as today from './views/today.js';
 import * as calendar from './views/calendar.js';
 import * as review from './views/review.js';
 import * as plan from './views/plan.js';
+import * as goal from './views/goal.js';
+import * as shop from './views/shop.js';
+import * as rules from './views/rules.js';
 
 const DEMO = new URLSearchParams(location.search).has('demo');
 const { api } = DEMO ? await import('./api/demo.js') : await import('./api/supabase.js');
@@ -16,22 +19,31 @@ const ICONS = {
   review: '<circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/>',
   plan: '<path d="M9 6h11M9 12h11M9 18h11M4 6h1M4 12h1M4 18h1"/>',
   friend: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>',
+  goal: '<path d="M5 21V4h11l-2 4 2 4H5"/>',
+  shop: '<path d="M5 8h14l-1 12H6L5 8z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/>',
+  rules: '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
 };
 
 const TABS = {
   athlete: [
     { route: 'today', label: 'Сегодня', icon: 'today' },
     { route: 'calendar', label: 'Календарь', icon: 'calendar' },
+    { route: 'goal', label: 'Цель', icon: 'goal' },
+    { route: 'shop', label: 'Магазин', icon: 'shop' },
   ],
   admin: [
     { route: 'review', label: 'Проверка', icon: 'review' },
     { route: 'plan', label: 'План', icon: 'plan' },
-    { route: 'calendar', label: 'Календарь', icon: 'calendar' },
+    { route: 'rules', label: 'Правила', icon: 'rules' },
     { route: 'today', label: 'Друг', icon: 'friend' },
   ],
 };
 
-const VIEWS = { today, day: today, calendar, review, plan };
+// Экраны друга: у атлета это вкладки, у админа — разделы вкладки «Друг».
+const FRIEND = TABS.athlete;
+const FRIEND_ROUTES = ['today', 'day', 'calendar', 'goal', 'shop'];
+
+const VIEWS = { today, day: today, calendar, goal, shop, review, plan, rules };
 
 const root = document.getElementById('app');
 const ctx = { api, demo: DEMO, toast, refresh: () => route(), signOut };
@@ -70,7 +82,12 @@ function shell() {
         ${ctx.athletes.map((a) => html`<option value="${a.id}" ${a.id === ctx.athleteId ? html`selected` : ''}>${a.name || 'без имени'}</option>`)}
       </select>
     </div>` : ''}
-    <main class="main" id="view"></main>
+    <main class="main">
+      ${ctx.me.role === 'admin' ? html`<nav class="subnav" id="subnav" aria-label="Экраны друга" hidden>
+        ${FRIEND.map((t) => html`<a class="sub-tab" data-route="${t.route}" href="#/${t.route}">${t.label}</a>`)}
+      </nav>` : ''}
+      <div class="view" id="view"></div>
+    </main>
     <nav class="tabbar" aria-label="Вкладки">
       ${tabs.map((t) => html`<a class="tab" data-route="${t.route}" href="#/${t.route}">
         <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${raw(ICONS[t.icon])}</svg>${t.label}</a>`)}
@@ -101,22 +118,30 @@ async function route() {
   const { name, args } = parseHash();
   const tabs = TABS[ctx.me.role];
   const view = VIEWS[name];
-  const allowed = tabs.some((t) => t.route === name) || (name === 'day');
+  const isAdmin = ctx.me.role === 'admin';
+  const friend = FRIEND_ROUTES.includes(name);
+  const allowed = tabs.some((t) => t.route === name) || name === 'day' || (isAdmin && friend);
   if (!view || !allowed) {
     location.replace(`#/${tabs[0].route}`);
     return;
   }
-  const active = name === 'day' ? 'today' : name;
-  root.querySelectorAll('.tab').forEach((t) => {
-    const on = t.dataset.route === active;
-    t.classList.toggle('tab-on', on);
+  const sub = name === 'day' ? 'today' : name;
+  const active = isAdmin && friend ? 'today' : sub;
+  const mark = (t, on) => {
+    t.classList.toggle(t.classList.contains('tab') ? 'tab-on' : 'sub-on', on);
     if (on) t.setAttribute('aria-current', 'page'); else t.removeAttribute('aria-current');
-  });
+  };
+  root.querySelectorAll('.tab').forEach((t) => mark(t, t.dataset.route === active));
+  const subnav = root.querySelector('#subnav');
+  if (subnav) {
+    subnav.hidden = !friend;
+    subnav.querySelectorAll('.sub-tab').forEach((t) => mark(t, t.dataset.route === sub));
+  }
 
   const el = root.querySelector('#view');
   const my = ++routeSeq;
   try {
-    [ctx.clock, ctx.settings] = await Promise.all([api.clock(), api.settings()]);
+    [ctx.clock, ctx.settings, ctx.rules] = await Promise.all([api.clock(), api.settings(), api.rules()]);
     if (my !== routeSeq) return;
     await view.render(el, ctx, args, () => my === routeSeq);
   } catch (err) {

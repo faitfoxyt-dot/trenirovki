@@ -1,7 +1,7 @@
 // «Календарь»: месяц, цвет дня по статусу, тап — подробности дня.
 
 import { html, monthKey, shiftMonth, monthTitle, monthDays, isoDow, dayTitle, WD_SHORT } from '../util.js';
-import { DAY_STATE, DAY_STATUS, MUSCLES, REVIEW, effectiveStatus, dayState } from '../logic.js';
+import { DAY_STATE, DAY_STATUS, MUSCLES, REVIEW, effectiveStatus, dayState, setPoints, signed } from '../logic.js';
 
 const LEGEND = ['confirmed', 'pending', 'missed', 'sick', 'rest', 'bought', 'busy', 'planned'];
 
@@ -112,7 +112,7 @@ function detailHtml(d, clock, exercises) {
     ${sorted.length ? html`<ul class="log-list">
       ${sorted.map((l) => html`<li>
         <div class="row"><span>${name(l.exercise_id)} · подход ${l.set_no}</span>
-          <span class="review review-${l.review}">${REVIEW[l.review]}</span></div>
+          <span class="review review-${l.review}">${REVIEW[l.review]}${setPoints(l) !== null ? ` · ${signed(setPoints(l))}` : ''}</span></div>
         <p class="label">Заявлено: ${l.claimed ?? '—'}${l.review !== 'pending' ? ` · подтверждено: ${l.confirmed}` : ''}
           · видео ${l.has_video ? 'есть' : 'нет'}</p>
         ${l.comment ? html`<p class="label comment">Тимур: ${l.comment}</p>` : ''}

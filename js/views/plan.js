@@ -30,9 +30,8 @@ export async function render(el, ctx, args, alive) {
       <p class="label">Первая неделя без очков: друг просто пишет, сколько сделал. По этим числам ты потом ставишь цели.</p>
       <label class="label" for="start-date">Старт калибровки</label>
       <input class="input" id="start-date" type="date" value="${settings.start_date ?? ''}">
-      <label class="check check-wide"><input type="checkbox" id="calibration" ${settings.calibration ? html`checked` : ''}>
-        <span>Идёт калибровка — очки не начисляются</span></label>
       <p class="label ok" id="settings-saved" aria-live="polite"></p>
+      <p class="label">Выключить калибровку и задать очки — во вкладке «Правила».</p>
     </section>
 
     <section class="card">
@@ -94,7 +93,6 @@ export async function render(el, ctx, args, alive) {
     } catch (err) { ctx.toast(err.message); }
   };
   el.querySelector('#start-date').addEventListener('change', (e) => saveSettings({ start_date: e.target.value || null }));
-  el.querySelector('#calibration').addEventListener('change', (e) => saveSettings({ calibration: e.target.checked }));
 
   // Шаблон недели
   el.querySelectorAll('select.dow').forEach((s) => s.addEventListener('change', async () => {
