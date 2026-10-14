@@ -10,7 +10,7 @@ const RULE_KEYS = ['calibration', 'per_exercise', 'streak_from', 'streak_step', 
   'miss_penalty_pct', 'rest_day_price', 'purchase_limit_week', 'phone_price'];
 
 const db = {
-  settings: { id: 1, start_date: null, grace_hours: 3, show_rules: false },
+  settings: { id: 1, start_date: null, grace_hours: 3, show_rules: false, rotation_from: null, rotation_shift: 0 },
   rules: [{ valid_from: '2000-01-01', calibration: true }],
   template: [1, 2, 3, 4, 5, 6, 7].map((dow) => ({ dow, status: dow === 7 ? 'rest' : 'training' })),
   exercises: [
@@ -19,6 +19,8 @@ const db = {
     { id: 3, name: 'Отжимания на брусьях', unit: 'reps', sets: 3, target_reps: null, position: 2, active: false, archived: false },
     { id: 4, name: 'Планка', unit: 'sec', sets: 2, target_reps: 60, position: 3, active: false, archived: false },
   ],
+  // Комплексы по кругу: items — [{id, sets, target_reps}].
+  complexes: [{ id: 1, position: 0, items: [{ id: 1, sets: 3, target_reps: null }, { id: 2, sets: 3, target_reps: null }] }],
   days: [],
   logs: [],
   mornings: [],
@@ -46,13 +48,28 @@ function clock() {
 
 // ── День ──
 
-function currentPlan() {
-  return db.exercises.filter((e) => e.active)
-    .sort((a, b) => a.position - b.position || a.id - b.id)
-    .map(({ id, name, unit, sets, target_reps }) => ({ id, name, unit, sets, target_reps }));
+const findDay = (a, date) => db.days.find((x) => x.athlete_id === a && x.date === date);
+
+// Какой по счёту комплекс в этот день — как complex_index в базе: от точки отсчёта
+// считаются только тренировочные дни.
+function complexIndex(a, date) {
+  const n = db.complexes.length;
+  if (!n) return null;
+  const anchor = db.settings.rotation_from ?? db.settings.start_date ?? today();
+  let k = 0;
+  const [from, to] = date < anchor ? [date, anchor] : [anchor, date];
+  for (let d = from; d < to; d = addDays(d, 1)) if (dayStatusOf(a, d) === 'training') k += 1;
+  if (date < anchor) k = -k;
+  return (((db.settings.rotation_shift ?? 0) + k) % n + n) % n;
 }
 
-const findDay = (a, date) => db.days.find((x) => x.athlete_id === a && x.date === date);
+function currentPlan(a, date) {
+  const c = db.complexes[complexIndex(a, date) ?? 0];
+  return (c?.items ?? []).map((x) => {
+    const e = db.exercises.find((y) => y.id === x.id && !y.archived);
+    return e && { id: e.id, name: e.name, unit: e.unit, sets: x.sets, target_reps: x.target_reps ?? null };
+  }).filter(Boolean);
+}
 
 function ensureDay(a, date) {
   let d = findDay(a, date);
@@ -62,7 +79,7 @@ function ensureDay(a, date) {
     d = { athlete_id: a, date, status: t ? t.status : null, plan: null, note: null };
     db.days.push(d);
   }
-  if (d.status === 'training' && !d.plan && date <= today()) d.plan = currentPlan();
+  if (d.status === 'training' && !d.plan && date <= today()) d.plan = currentPlan(a, date);
   return d;
 }
 
@@ -76,7 +93,7 @@ function putStatus(a, date, status) {
   let d = findDay(a, date);
   if (!d) { d = { athlete_id: a, date, status, plan: null, note: null }; db.days.push(d); }
   d.status = status;
-  if (status === 'training' && !d.plan && date <= today()) d.plan = currentPlan();
+  if (status === 'training' && !d.plan && date <= today()) d.plan = currentPlan(a, date);
   return d;
 }
 
@@ -91,7 +108,7 @@ const isCal = (r) => !r || r.calibration !== false;
 // [засчитано подходов из плана, всего подходов в плане] — как day_counts в базе:
 // засчитан подход больше чем с 0 повторов (по числу Тимура, если проверен).
 function dayCounts(a, date) {
-  const plan = findDay(a, date)?.plan ?? currentPlan();
+  const plan = findDay(a, date)?.plan ?? currentPlan(a, date);
   const done = db.logs.filter((l) => l.athlete_id === a && l.date === date && (l.confirmed ?? l.claimed ?? 0) > 0
     && plan.some((e) => e.id === l.exercise_id && l.set_no <= e.sets)).length;
   return [done, plan.reduce((s, e) => s + e.sets, 0)];
@@ -361,11 +378,13 @@ export const api = {
     // Прошедшие дни остаются со старым статусом — как триггер freeze_past_days в базе.
     const start = db.settings.start_date;
     if (start && t.status !== status) {
+      const add = [];
       for (let d = start; d < today(); d = addDays(d, 1)) {
         if (isoDow(d) === dow && !findDay(ATHLETE.id, d)) {
-          db.days.push({ athlete_id: ATHLETE.id, date: d, status: t.status, plan: t.status === 'training' ? currentPlan() : null, note: null });
+          add.push({ athlete_id: ATHLETE.id, date: d, status: t.status, plan: t.status === 'training' ? currentPlan(ATHLETE.id, d) : null, note: null });
         }
       }
+      db.days.push(...add);
     }
     t.status = status;
   },
@@ -381,6 +400,38 @@ export const api = {
     const row = { unit: 'reps', ...ex, id: seq++ };
     db.exercises.push(row);
     return clone(row);
+  },
+
+  async complexes() { return clone(db.complexes); },
+
+  async saveComplexes(list, next) {
+    needAdmin();
+    if (!Array.isArray(list) || list.length < 1 || list.length > 5) fail('Комплексов — от 1 до 5');
+    if (!Number.isInteger(next) || next < 0 || next >= list.length) fail('Нет такого комплекса');
+    for (const c of list) {
+      if (c.some((x) => !db.exercises.some((e) => e.id === x.id && !e.archived))) fail('В комплексе есть неизвестное упражнение');
+      if (c.some((x) => x.sets < 1 || x.sets > 10 || (x.target_reps != null && (x.target_reps < 1 || x.target_reps > 1000)))) {
+        fail('Подходов — от 1 до 10, цель — от 1 до 1000');
+      }
+      if (new Set(c.map((x) => x.id)).size !== c.length) fail('Упражнение повторяется в одном комплексе');
+    }
+    const t = today();
+    const a = ATHLETE.id;
+    const old = JSON.stringify(currentPlan(a, t));
+    db.complexes = list.map((c, i) => ({ id: seq++, position: i,
+      items: c.map(({ id, sets, target_reps }) => ({ id, sets, target_reps: target_reps ?? null })) }));
+    Object.assign(db.settings, { rotation_from: t, rotation_shift: next });
+    db.exercises.forEach((e) => { e.active = db.complexes.some((c) => c.items.some((x) => x.id === e.id)); });
+    // Сегодня друг ещё ничего не отметил и план не меняли вручную — день получает новый комплекс.
+    const d = findDay(a, t);
+    if (d && d.status === 'training' && JSON.stringify(d.plan) === old
+      && !db.logs.some((l) => l.athlete_id === a && l.date === t && l.claimed != null)) d.plan = currentPlan(a, t);
+  },
+
+  async complexSchedule(a, from, to) {
+    const out = [];
+    for (let d = from; d <= to; d = addDays(d, 1)) out.push({ date: d, status: dayStatusOf(a, d), complex: complexIndex(a, d) });
+    return out;
   },
 
   async openDay(date, athleteId) {
@@ -586,7 +637,7 @@ export const api = {
       });
     }
     const d = setStatus(a, date, 'training');
-    d.plan = full ?? (date === today() ? currentPlan() : null);
+    d.plan = full ?? (date === today() ? currentPlan(a, date) : null);
     d.note = (note || '').trim() || null;
     return clone(d);
   },

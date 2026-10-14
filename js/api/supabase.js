@@ -79,6 +79,22 @@ export const api = {
     return check(await sb.from('exercises').insert(row).select().single());
   },
 
+  // Комплексы А, Б, В… по порядку: [{position, items: [{id, sets, target_reps}]}].
+  async complexes() {
+    const row = check(await sb.from('settings').select('complexes').eq('id', 1).single());
+    return (row.complexes ?? []).map((items, position) => ({ position, items }));
+  },
+
+  // list — комплексы по порядку: [[{id, sets, target_reps}], …]; next — какой сегодня (или на ближайшей тренировке).
+  async saveComplexes(list, next) {
+    check(await sb.rpc('save_complexes', { p_list: list, p_next: next }));
+  },
+
+  // [{date, status, complex}] — какой комплекс в какой день.
+  async complexSchedule(athleteId, from, to) {
+    return check(await sb.rpc('complex_schedule', { p_athlete: athleteId, p_from: from, p_to: to }));
+  },
+
   async openDay(date, athleteId) {
     const d = check(await sb.rpc('open_day', { p_date: date, p_athlete: athleteId ?? null }));
     // Функция возвращает пустую строку, если день ещё не наступил.
