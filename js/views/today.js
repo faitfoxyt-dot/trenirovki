@@ -57,6 +57,9 @@ export async function render(el, ctx, args, alive) {
     ${mode === 'grace' ? html`<p class="notice">День закрыт. До 03:00 можно отметить только видео.</p>` : ''}
     ${!isAdmin && !isToday && mode === 'closed' && status === 'training' ? html`<p class="notice">День закрыт, править может только Тимур.</p>` : ''}
 
+    ${day?.note && status === 'training' ? html`<section class="card task-card">
+      <h2 class="h2">Задание от Тимура</h2><p>${day.note}</p></section>` : ''}
+
     ${isToday || state.morning.muscles || state.morning.energy ? html`<section class="card" id="morning"></section>` : ''}
 
     ${status === 'training' && day.plan && !beforeStart
@@ -204,7 +207,7 @@ function renderMorning(el, ctx, state, editable) {
   const done = m.muscles && m.energy;
   el.innerHTML = String(html`
     <div class="row"><h2 class="h2">Утро: как ты?</h2>${done ? html`<span class="chip chip-on">готово</span>` : ''}</div>
-    <p class="label" id="muscles-label">Мышцы</p>
+    <p class="label" id="muscles-label">Самочувствие</p>
     <div class="seg" role="group" aria-labelledby="muscles-label">
       ${MUSCLES.map((x) => html`<button type="button" class="pill ${m.muscles === x.key ? 'pill-on' : ''}"
         data-muscles="${x.key}" aria-pressed="${m.muscles === x.key}" ${editable ? '' : html`disabled`}>${x.label}</button>`)}
@@ -218,7 +221,7 @@ function renderMorning(el, ctx, state, editable) {
       <input class="input" id="morning-note" type="text" maxlength="500" value="${m.note ?? ''}" placeholder="Например: плохо спал">`
       : m.note ? html`<p class="label">Заметка: ${m.note}</p>` : ''}
     ${m.muscles === 'pain' ? html`<div class="warn-box">
-      <p>Боль — это не крепатура. Можно попросить больничный: очки не тратятся, серия не рвётся.</p>
+      <p>Если болит по-настоящему, а не крепатура, — попроси больничный: очки не тратятся, серия не рвётся.</p>
       ${sickHtml(state, editable)}
     </div>` : ''}
   `);

@@ -18,9 +18,9 @@ export const REVIEW = {
 };
 
 export const MUSCLES = [
-  { key: 'ok', label: 'Норма' },
-  { key: 'sore', label: 'Крепатура' },
-  { key: 'pain', label: 'Боль' },
+  { key: 'pain', label: 'Плохо' },
+  { key: 'sore', label: 'Так себе' },
+  { key: 'ok', label: 'Готов' },
 ];
 
 // Состояние дня в календаре — от него зависит цвет клетки.
@@ -43,14 +43,24 @@ export function effectiveStatus(date, dayRow, template) {
   return t ? t.status : null;
 }
 
-export function dayState({ date, today, startDate, status, logs }) {
+// plan — комплекс дня [{id, sets}]: прошедший день, где отмечен не каждый подход плана, — пропуск.
+export function dayState({ date, today, startDate, status, logs, plan }) {
   if (startDate && date < startDate) return 'before';
   if (status === 'sick' || status === 'rest' || status === 'bought' || status === 'busy') return status;
   if (status !== 'training') return 'unset';
   if (date > today) return 'planned';
   const filled = logs.filter((l) => l.claimed !== null && l.claimed !== undefined);
+  if (date < today && plan && dayCounts(plan, logs).done < dayCounts(plan, logs).total) return 'missed';
   if (filled.length) return filled.some((l) => l.review === 'pending') ? 'pending' : 'confirmed';
   return date < today ? 'missed' : 'planned';
+}
+
+// Сколько подходов плана отмечено и сколько всего — как day_counts в базе.
+export function dayCounts(plan, logs) {
+  const total = plan.reduce((s, e) => s + e.sets, 0);
+  const done = logs.filter((l) => l.claimed !== null && l.claimed !== undefined
+    && plan.some((e) => e.id === l.exercise_id && l.set_no <= e.sets)).length;
+  return { done, total };
 }
 
 export function caption(date, exerciseName, setNo) {
@@ -82,10 +92,10 @@ export function reviewNote(log) {
   return 'Отклонено';
 }
 
-// Очки за подход вместе с бонусом сверх цели; null — очки не считались (калибровка, не проверен).
+// Очки за подход (уже с бонусом сверх цели и множителем серии); null — очки не считались.
 export function setPoints(log) {
   if (log?.points === null || log?.points === undefined) return null;
-  return log.points + (log.bonus ?? 0);
+  return log.points;
 }
 
 export function signed(n) {
