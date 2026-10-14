@@ -3,6 +3,7 @@
 
 import { html } from '../util.js';
 import { POINTS, signed } from '../logic.js';
+import { howItWorks } from './goal.js';
 
 // Числа у каждого упражнения свои.
 const PER_EX = [
@@ -36,8 +37,11 @@ export async function render(el, ctx, args, alive) {
   const { rules, api } = ctx;
   const isAdmin = ctx.me.role === 'admin';
   if (!isAdmin && !ctx.settings?.show_rules) {
-    el.innerHTML = String(html`<section class="card"><h2 class="h2">Правила скрыты</h2>
-      <p class="label">Тимур пока не открыл числа правил. Как всё работает — во вкладке «Цель».</p>
+    el.innerHTML = String(html`<header class="stack-8"><p class="sub">Как считаются очки · меняет Тимур</p>
+      <h1 class="h1">Правила</h1></header>
+      <section class="card"><h2 class="h2">Как это работает</h2>
+      <p class="label">Точные числа Тимур пока не открыл, но в общих чертах так:</p>
+      <ul class="list">${howItWorks(ctx.rules?.current, { numbers: false })}</ul>
       <a class="ghost link" href="#/goal">К цели</a></section>`);
     return;
   }
