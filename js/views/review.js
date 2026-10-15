@@ -2,7 +2,7 @@
 // отклонить, комментарий. Очки за подход база считает в момент решения.
 
 import { html, dayTitle } from '../util.js';
-import { MUSCLES, caption, setPoints, signed, multTag, amount, unitOf, unitText } from '../logic.js';
+import { MUSCLES, caption, setPoints, signed, multTag, amount, unitOf, unitText, ALLIN } from '../logic.js';
 
 const DECISIONS = [
   { key: 'accepted', label: 'Принять' },
@@ -48,6 +48,15 @@ export async function render(el, ctx, args, alive) {
     g.logs.push(l);
   });
 
+  // Дни с «Всё или ничего»: там каждое упражнение должно быть до конца и с видео.
+  const allinDays = new Set();
+  const from = groups.map((g) => g.date).sort()[0];
+  if (from) {
+    const lists = await Promise.all([...new Set(groups.map((g) => g.athlete))].map((a) => api.purchases(a, from)));
+    lists.flat().filter((p) => p.kind === 'allin').forEach((p) => allinDays.add(`${p.athlete_id}|${p.date}`));
+    if (!alive()) return;
+  }
+
   el.innerHTML = String(html`
     <header class="stack-8">
       <p class="sub">Подходы, которые ждут твоего решения</p>
@@ -68,6 +77,7 @@ export async function render(el, ctx, args, alive) {
     ${newIdeas ? html`<a class="notice" href="#/shop">Новые идеи для магазина: ${newIdeas} →</a>` : ''}
     ${pending.length ? groups.map((g) => html`<div class="row day-head">
       <h2 class="h2">${dayTitle(g.date)}${many ? html` · <span class="label">${athleteName(g.athlete)}</span>` : ''}</h2>
+      ${allinDays.has(g.key) ? html`<span class="chip chip-allin" title="Каждый подход — до цели и с видео">🎲 ${ALLIN}</span>` : ''}
       ${g.logs.length > 1 ? html`<button type="button" class="ghost" data-accept-day="${g.key}">Принять всё за день</button>` : ''}
     </div>
     ${g.logs.map((l) => html`<section class="card review-card" data-id="${l.id}" data-group="${g.key}" data-unit="${exUnit(l.exercise_id)}">

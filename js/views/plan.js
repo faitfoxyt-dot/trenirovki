@@ -14,7 +14,7 @@ const dayShort = (d) => `${WD_SHORT[isoDow(d) - 1]} ${shortDate(d)}`;
 const CLEAR = [
   { k: 'sets', label: 'Подходы (и их теоретические очки)' },
   { k: 'points', label: 'Записи очков' },
-  { k: 'purchases', label: 'Покупки выходных' },
+  { k: 'purchases', label: 'Покупки (выходные и «Всё или ничего»)' },
   { k: 'sick', label: 'Запросы больничного' },
   { k: 'ideas', label: 'Идеи' },
   { k: 'mornings', label: 'Утро' },
