@@ -149,8 +149,11 @@ export const api = {
     return check(await sb.rpc('rules_now'));
   },
 
+  // Числа «Всё или ничего» сохраняются отдельно, в те же сегодняшние правила.
   async saveRules(rules) {
-    return check(await sb.rpc('save_rules', { p: rules }));
+    const saved = check(await sb.rpc('save_rules', { p: rules }));
+    if (!('allin_price' in rules)) return saved;
+    return check(await sb.rpc('save_allin', { p: rules }));
   },
 
   async wallet(athleteId) {
@@ -169,6 +172,16 @@ export const api = {
 
   async buyRestDay(date) {
     return check(await sb.rpc('buy_rest_day', { p_date: date }));
+  },
+
+  async buyAllin(date) {
+    return check(await sb.rpc('buy_allin', { p_date: date }));
+  },
+
+  // «Всё или ничего» на день: null — не куплено, иначе {done, missed, waiting, total, items, mult, best, k, up, down,
+  // points, bonus, final, test, applied}.
+  async allinDay(date, athleteId) {
+    return check(await sb.rpc('allin_day', { p_date: date, p_athlete: athleteId ?? null }));
   },
 
   async cancelPurchase(id) {

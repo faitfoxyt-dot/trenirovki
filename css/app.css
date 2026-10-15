@@ -375,3 +375,14 @@ a.chip-link { color: var(--accent); text-decoration: none; border: 1px solid var
 .how-text p { margin: 0; }
 .how-title { margin: 0; font-size: 15px; font-weight: 600; }
 .how-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px; }
+
+/* «Всё или ничего»: день на кону — янтарная рамка и метки. */
+.chip-allin { background: transparent; border: 1px solid var(--warn); color: var(--warn); font-weight: 600; }
+.allin-card { border-color: var(--warn); background: linear-gradient(160deg, rgba(255, 181, 71, 0.10), transparent 60%), var(--surface); }
+.allin-card p { margin: 0; }
+.allin-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.allin-list li { display: flex; align-items: center; gap: 8px; }
+.allin-list li .label { margin-left: auto; }
+.allin-ex { border-left: 3px solid var(--warn); }
+.allin-bet { white-space: nowrap; border: 1px solid var(--warn); color: var(--warn); background: transparent; }
+.day-allin::before { content: ''; position: absolute; right: 4px; top: 4px; width: 6px; height: 6px; border-radius: 3px; background: var(--warn); }

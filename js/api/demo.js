@@ -7,7 +7,8 @@ const ADMIN = { id: 'admin', role: 'admin', name: 'Тимур' };
 const ATHLETE = { id: 'athlete', role: 'athlete', name: 'Друг' };
 
 const RULE_KEYS = ['calibration', 'per_exercise', 'streak_from', 'streak_step', 'streak_max',
-  'miss_penalty_pct', 'rest_day_price', 'purchase_limit_week', 'phone_price'];
+  'miss_penalty_pct', 'rest_day_price', 'purchase_limit_week', 'phone_price',
+  'allin_price', 'allin_up', 'allin_down', 'allin_limit_week'];
 
 const db = {
   settings: { id: 1, start_date: null, grace_hours: 3, show_rules: false, rotation_from: null, rotation_shift: 0 },
@@ -146,6 +147,56 @@ function addLedger(row) {
   db.ledger.push({ id: seq++, amount: 0, rating: 0, note: null, key: null, set_id: null, created_at: stamp(), ...row });
 }
 
+// «Всё или ничего» — как allin_state в базе. null — на этот день не куплено.
+function allinState(a, date) {
+  const p = db.purchases.find((x) => x.athlete_id === a && x.date === date && x.status === 'active' && x.kind === 'allin');
+  if (!p) return null;
+  const test = isTestDay(date);
+  const r = rulesFor(test ? today() : date);
+  const up = Number(r?.allin_up ?? 0);
+  const down = Number(r?.allin_down ?? 0);
+  const ended = date < today();
+  const plan = findDay(a, date)?.plan ?? currentPlan(a, date);
+  const logs = db.logs.filter((l) => l.athlete_id === a && l.date === date);
+  let done = 0;
+  let miss = 0;
+  let wait = 0;
+  const items = plan.map((ex) => {
+    const tgt = Math.max(ex.target_reps ?? 1, 1);
+    const sets = logs.filter((l) => l.exercise_id === ex.id && l.set_no <= ex.sets);
+    const yes = sets.filter((l) => (l.review === 'accepted' || l.review === 'corrected') && (l.confirmed ?? 0) >= tgt).length;
+    const no = sets.filter((l) => l.review !== 'pending' && (l.confirmed ?? 0) < tgt).length
+      + (ended ? ex.sets - sets.filter((l) => l.claimed != null).length : 0);
+    const state = no > 0 ? 'miss' : yes >= ex.sets ? 'done' : 'wait';
+    if (state === 'done') done += 1; else if (state === 'miss') miss += 1; else wait += 1;
+    return { id: ex.id, name: ex.name, state };
+  });
+  const rows = test ? db.theory.filter((t) => t.athlete_id === a && t.date === date)
+    : logs.filter((l) => l.points != null);
+  const points = rows.reduce((n, x) => n + x.points, 0);
+  const k = rows.length ? Math.max(...rows.map((x) => Number(x.mult ?? 1))) : streakMult(r, dayStreak(a, date));
+  const round2 = (v) => Math.round(v * 100) / 100;
+  const m = Math.max(0.1, k + up * done - down * miss);
+  const best = Math.max(0.1, k + up * (done + wait) - down * miss);
+  const applied = db.ledger.filter((x) => x.athlete_id === a && x.date === date && x.kind === 'modifier').reduce((n, x) => n + x.rating, 0);
+  return { price: p.price, up, down, k, done, missed: miss, waiting: wait, total: plan.length, items,
+    mult: round2(m), best: round2(best), points, bonus: Math.round(points * (m / k - 1)),
+    final: ended && wait === 0, test, applied };
+}
+
+// Записать разницу между тем, что модификатор должен дать, и тем, что уже в журнале, — как allin_apply.
+function allinApply(a, date) {
+  const s = allinState(a, date);
+  if (s?.test) return;
+  const want = s?.final ? s.bonus : 0;
+  const have = db.ledger.filter((x) => x.athlete_id === a && x.date === date && x.kind === 'modifier').reduce((n, x) => n + x.rating, 0);
+  const delta = want - have;
+  if (!delta) return;
+  addLedger({ athlete_id: a, date, kind: 'modifier', amount: Math.max(delta, -balance(a)), rating: delta,
+    note: s ? `${have ? 'Пересмотр: ' : ''}Всё или ничего: сделано ${s.done} из ${s.total} упражнений · очки дня ×${s.mult}`
+      : 'Всё или ничего отменено' });
+}
+
 function awardSet(l) {
   let r = rulesFor(l.date);
   const cal = isCal(r);
@@ -215,6 +266,9 @@ function settle(a) {
       note: 'Штраф снят: день засчитан после проверки', key: `unpenalty:${x.date}` });
   });
 
+  [...new Set(db.purchases.filter((p) => p.athlete_id === a && p.kind === 'allin' && p.date < t && p.date >= addDays(t, -60))
+    .map((p) => p.date))].forEach((d) => allinApply(a, d));
+
   const price = rulesFor(t)?.phone_price;
   if (price > 0) {
     [25, 50, 75, 100].forEach((pct) => {
@@ -244,16 +298,39 @@ function buy(a, date) {
   if (r?.rest_day_price == null) fail('Цену выходного Тимур ещё не задал');
   const st = dayStatusOf(a, date);
   if (st !== 'training') fail('В этот день и так нет тренировки');
+  if (db.purchases.some((p) => p.athlete_id === a && p.date === date && p.status === 'active')) {
+    fail('На этот день уже куплено «Всё или ничего». Отмени его, если хочешь выходной');
+  }
   if (r.purchase_limit_week != null) {
-    const cnt = db.purchases.filter((p) => p.athlete_id === a && p.status === 'active' && weekStart(p.date) === weekStart(date)).length;
+    const cnt = db.purchases.filter((p) => p.athlete_id === a && p.status === 'active' && p.kind === 'rest' && weekStart(p.date) === weekStart(date)).length;
     if (cnt >= r.purchase_limit_week) fail(`На этой неделе лимит: ${r.purchase_limit_week} вых.`);
   }
   const bal = balance(a);
   if (bal < r.rest_day_price) fail(`Не хватает очков: нужно ${r.rest_day_price}, на балансе ${bal}`);
-  const p = { id: seq++, athlete_id: a, date, price: r.rest_day_price, prev_status: st, status: 'active', created_at: stamp() };
+  const p = { id: seq++, athlete_id: a, date, price: r.rest_day_price, prev_status: st, status: 'active', kind: 'rest', created_at: stamp() };
   db.purchases.push(p);
   putStatus(a, date, 'bought');
   addLedger({ athlete_id: a, date, kind: 'purchase', amount: -p.price, note: `Выходной на ${dayLabel(date)}` });
+  return p;
+}
+
+function buyAllin(a, date) {
+  const t = today();
+  const r = rulesFor(t);
+  if (date <= t) fail('«Всё или ничего» покупается заранее, до начала дня');
+  if (date > addDays(t, 60)) fail('Можно купить не дальше чем на 60 дней вперёд');
+  if (r?.allin_price == null) fail('Цену «Всё или ничего» Тимур ещё не задал');
+  if (dayStatusOf(a, date) !== 'training') fail('В этот день нет тренировки');
+  if (db.purchases.some((p) => p.athlete_id === a && p.date === date && p.status === 'active')) fail('На этот день уже есть покупка');
+  if (r.allin_limit_week != null) {
+    const cnt = db.purchases.filter((p) => p.athlete_id === a && p.status === 'active' && p.kind === 'allin' && weekStart(p.date) === weekStart(date)).length;
+    if (cnt >= r.allin_limit_week) fail(`На этой неделе лимит «Всё или ничего»: ${r.allin_limit_week}`);
+  }
+  const bal = balance(a);
+  if (bal < r.allin_price) fail(`Не хватает очков: нужно ${r.allin_price}, на балансе ${bal}`);
+  const p = { id: seq++, athlete_id: a, date, price: r.allin_price, prev_status: 'training', status: 'active', kind: 'allin', created_at: stamp() };
+  db.purchases.push(p);
+  addLedger({ athlete_id: a, date, kind: 'purchase', amount: -p.price, note: `Всё или ничего на ${dayLabel(date)}` });
   return p;
 }
 
@@ -261,9 +338,11 @@ function setStatus(a, date, status) {
   if (status === 'bought') fail('Купленный выходной ставит атлет в магазине');
   const d = putStatus(a, date, status);
   const p = db.purchases.find((x) => x.athlete_id === a && x.date === date && x.status === 'active');
-  if (p) {
+  if (p && !(p.kind === 'allin' && status === 'training')) {
     p.status = 'cancelled';
-    addLedger({ athlete_id: a, date, kind: 'refund', amount: p.price, note: 'Тимур поменял день: очки за выходной вернулись' });
+    addLedger({ athlete_id: a, date, kind: 'refund', amount: p.price,
+      note: p.kind === 'allin' ? 'Тимур поменял день: очки за «Всё или ничего» вернулись' : 'Тимур поменял день: очки за выходной вернулись' });
+    if (p.kind === 'allin') allinApply(a, date);
   }
   const pen = db.ledger.find((x) => x.athlete_id === a && x.key === `penalty:${date}`);
   if (status !== 'training' && pen && pen.amount < 0) {
@@ -284,7 +363,8 @@ function setStatus(a, date, status) {
   db.rules.push({ valid_from: rulesFrom, calibration: false,
     per_exercise: { 1: { rep: 2, set: 5, over: 2, cap: 6 }, 2: { rep: 0.5, set: 5, over: 0.5, cap: 3 }, 3: { rep: 1, set: 5 }, 4: { rep: 0.2, set: 5, over: 0.2, cap: 4 } },
     streak_from: 3, streak_step: 0.1, streak_max: 1.5,
-    miss_penalty_pct: 10, rest_day_price: 150, purchase_limit_week: 2, phone_price: 4000 });
+    miss_penalty_pct: 10, rest_day_price: 150, purchase_limit_week: 2, phone_price: 4000,
+    allin_price: 30, allin_up: 0.3, allin_down: 0.7, allin_limit_week: 1 });
 
   let j = 0; // номер тренировочного дня
   const log = (date, ex, n, claimed, video = true) => {
@@ -325,6 +405,12 @@ function setStatus(a, date, status) {
       else if (j === 12 && row.exercise_id === 2 && row.set_no === 3) review(row, 'rejected', null, 'Видео не пришло');
       else review(row, 'accepted');
     });
+    if (j === 11) {
+      // «Всё или ничего» на следующую тренировку (там один подход отклонят — «ничего»).
+      let date = addDays(d, 1);
+      while (dayStatusOf(a, date) !== 'training') date = addDays(date, 1);
+      buyAllin(a, date);
+    }
     if (j === 13) {
       // Купил выходной на ближайший тренировочный день через два дня.
       let date = addDays(d, 2);
@@ -332,6 +418,10 @@ function setStatus(a, date, status) {
       buy(a, date);
     }
   }
+  // «Всё или ничего» и на сегодня — куплено вчера.
+  frozen = addDays(T, -1);
+  if (dayStatusOf(a, T) !== 'training') putStatus(a, T, 'training');
+  try { buyAllin(a, T); } catch { /* лимит недели уже занят — не страшно */ }
   frozen = null;
   // Теория для тестовой недели — как пересчёт в save_rules.
   db.logs.filter((l) => isCal(rulesFor(l.date))).forEach(awardSet);
@@ -555,6 +645,19 @@ export const api = {
     return clone(buy(current.id, date));
   },
 
+  async buyAllin(date) {
+    needAthlete();
+    return clone(buyAllin(current.id, date));
+  },
+
+  async allinDay(date, athleteId) {
+    const a = athleteId ?? current.id;
+    if (a !== current.id) needAdmin();
+    const s = allinState(a, date);
+    if (s && s.test && current.role !== 'admin') Object.assign(s, { points: null, bonus: null });
+    return clone(s);
+  },
+
   async cancelPurchase(id) {
     const p = db.purchases.find((x) => x.id === id && (x.athlete_id === current.id || current.role === 'admin'));
     if (!p) fail('Покупка не найдена');
@@ -563,7 +666,8 @@ export const api = {
     p.status = 'cancelled';
     const d = findDay(p.athlete_id, p.date);
     if (d && d.status === 'bought') d.status = p.prev_status;
-    addLedger({ athlete_id: p.athlete_id, date: p.date, kind: 'refund', amount: p.price, note: `Отмена выходного на ${dayLabel(p.date)}` });
+    addLedger({ athlete_id: p.athlete_id, date: p.date, kind: 'refund', amount: p.price,
+      note: `${p.kind === 'allin' ? 'Отмена «Всё или ничего»' : 'Отмена выходного'} на ${dayLabel(p.date)}` });
     return clone(p);
   },
 

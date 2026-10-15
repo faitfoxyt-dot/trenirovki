@@ -1,8 +1,8 @@
-// «Магазин»: выходной за очки, больничный, идеи атлета.
+// «Магазин»: выходной за очки, «Всё или ничего», больничный, идеи атлета.
 // Админ видит то же самое, отменяет покупки и отвечает на идеи.
 
 import { html, dayTitle, addDays } from '../util.js';
-import { POINTS, effectiveStatus } from '../logic.js';
+import { POINTS, effectiveStatus, ALLIN, allinExample } from '../logic.js';
 import { phoneButton, confetti } from './goal.js';
 
 const IDEA = { new: 'на рассмотрении', accepted: 'принята', declined: 'отклонена' };
@@ -31,8 +31,13 @@ export async function render(el, ctx, args, alive) {
   const r = ctx.rules?.current;
   const price = r?.rest_day_price ?? null;
   const statusOf = (d) => effectiveStatus(d, days.find((x) => x.date === d) ?? null, template);
-  const options = Array.from({ length: AHEAD }, (_, i) => addDays(t, i + 1)).filter((d) => statusOf(d) === 'training');
+  // День, на который уже есть покупка, второй раз не купить.
+  const taken = new Set(purchases.map((p) => p.date));
+  const options = Array.from({ length: AHEAD }, (_, i) => addDays(t, i + 1)).filter((d) => statusOf(d) === 'training' && !taken.has(d));
   const canBuy = price !== null && w.balance >= price && options.length > 0;
+  const aPrice = r?.allin_price ?? null;
+  const canAllin = aPrice !== null && w.balance >= aPrice && options.length > 0;
+  const ex = allinExample(r);
   const todaySick = sick.find((s) => s.date === t) ?? null;
   const todayTraining = statusOf(t) === 'training';
 
@@ -60,14 +65,33 @@ export async function render(el, ctx, args, alive) {
         <p class="error" id="buy-error" role="alert"></p>
         <button type="button" class="btn" id="buy" ${canBuy ? '' : html`disabled`}>Купить${price !== null ? ` за ${price}` : ''}</button>`}
       <p class="label">${buyHint(r, price, w.balance, isAdmin)}</p>
-      ${purchases.length ? html`<div class="stack-8">
-        <p class="label em">Куплено</p>
-        ${purchases.map((p) => html`<div class="row bought">
-          <span>${dayTitle(p.date)} · ${p.price}</span>
-          <button type="button" class="ghost" data-cancel="${p.id}">Отменить</button>
-        </div>`)}
-      </div>` : ''}
     </section>
+
+    <section class="card allin-card">
+      <div class="row"><h2 class="h2">🎲 ${ALLIN}</h2><span class="chip">${aPrice !== null ? POINTS(aPrice) : 'не продаётся'}</span></div>
+      <p>Ставишь день на кон. Каждое упражнение, сделанное до конца, даёт +${ex.up} к множителю очков дня. Каждое несделанное — −${ex.down}.</p>
+      <p class="label">Сделано до конца — все подходы не меньше цели. Добавка складывается с серией и действует на все очки этого дня, ниже ×0.1 не падает.
+        Пример на трёх упражнениях: сделал всё — очки дня ×${ex.all}, одно не добил — ×${ex.oneMiss}, это уже меньше обычного дня.
+        Каждый подход — с видео. Итог считается, когда день закончился и генерал всё проверил.</p>
+      ${isAdmin ? '' : html`
+        <label class="label" for="allin-day">На какой день</label>
+        <select id="allin-day" class="input" ${options.length ? '' : html`disabled`}>
+          ${options.length ? options.map((d) => html`<option value="${d}">${dayTitle(d)}</option>`)
+            : html`<option>Тренировок впереди нет</option>`}
+        </select>
+        <p class="error" id="allin-error" role="alert"></p>
+        <button type="button" class="btn" id="buy-allin" ${canAllin ? '' : html`disabled`}>Пойти ва-банк${aPrice !== null ? ` за ${aPrice}` : ''}</button>`}
+      <p class="label">${allinHint(r, aPrice, w.balance, isAdmin)}</p>
+    </section>
+
+    ${purchases.length ? html`<section class="card">
+      <h2 class="h2">Куплено</h2>
+      ${purchases.map((p) => html`<div class="row bought">
+        <span>${p.kind === 'allin' ? `🎲 ${ALLIN}` : 'Выходной'} · ${dayTitle(p.date)} · ${p.price}</span>
+        <button type="button" class="ghost" data-cancel="${p.id}">Отменить</button>
+      </div>`)}
+      <p class="label">Отменить можно до начала дня, очки вернутся.</p>
+    </section>` : ''}
 
     <section class="card">
       <div class="row"><h2 class="h2">Больничный</h2><span class="chip">бесплатно</span></div>
@@ -115,6 +139,18 @@ export async function render(el, ctx, args, alive) {
     try {
       await api.buyRestDay(date);
       ctx.toast(`Выходной на ${dayTitle(date)} куплен`);
+      ctx.refresh();
+    } catch (e) { err.textContent = e.message; }
+  });
+
+  el.querySelector('#buy-allin')?.addEventListener('click', async () => {
+    const date = el.querySelector('#allin-day').value;
+    const err = el.querySelector('#allin-error');
+    err.textContent = '';
+    if (!confirm(`${ALLIN} на ${dayTitle(date)} за ${POINTS(aPrice)}? В этот день каждое упражнение — до конца и с видео.`)) return;
+    try {
+      await api.buyAllin(date);
+      ctx.toast(`${ALLIN} на ${dayTitle(date)} куплено. Удачи!`);
       ctx.refresh();
     } catch (e) { err.textContent = e.message; }
   });
@@ -168,6 +204,15 @@ function buyHint(r, price, balance, isAdmin) {
   if (!isAdmin && balance < price) parts.push(`Не хватает ${POINTS(price - balance)}.`);
   parts.push('Купить можно только заранее, до начала дня. Отменить — тоже до начала дня, очки вернутся.');
   if (r?.purchase_limit_week != null) parts.push(`Не больше ${r.purchase_limit_week} в неделю.`);
+  return parts.join(' ');
+}
+
+function allinHint(r, price, balance, isAdmin) {
+  if (price === null) return 'Генерал ещё не поставил цену — пока не продаётся.';
+  const parts = [];
+  if (!isAdmin && balance < price) parts.push(`Не хватает ${POINTS(price - balance)}.`);
+  parts.push('Купить можно только заранее, до начала дня.');
+  if (r?.allin_limit_week != null) parts.push(`Не больше ${r.allin_limit_week} в неделю.`);
   return parts.join(' ');
 }
 

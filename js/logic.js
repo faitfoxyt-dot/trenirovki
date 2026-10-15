@@ -154,3 +154,22 @@ export function dayMode({ date, clock, startDate, status }) {
   if (clock.grace && date === addDays(clock.today, -1)) return 'grace';
   return 'closed';
 }
+
+// «Всё или ничего» (ALL IN): модификатор дня из магазина.
+// Множитель дня = серия + up × сделанные упражнения − down × несделанные, не ниже ×0.1 — как allin_state в базе.
+export const ALLIN = 'Всё или ничего';
+const x2 = (v) => Math.round(Number(v) * 100) / 100;
+export const allinMult = (k, up, down, done, miss) => Math.max(0.1, x2(k + up * done - down * miss));
+
+// Пример на трёх упражнениях: всё сделал / одно не добил (без серии).
+export function allinExample(r) {
+  const up = Number(r?.allin_up ?? 0);
+  const down = Number(r?.allin_down ?? 0);
+  return { all: allinMult(1, up, down, 3, 0), oneMiss: allinMult(1, up, down, 2, 1), up: x2(up), down: x2(down) };
+}
+
+export const ALLIN_STATE = {
+  done: { icon: '✅', text: 'сделано' },
+  miss: { icon: '❌', text: 'не сделано' },
+  wait: { icon: '⏳', text: 'на кону' },
+};

@@ -1,7 +1,7 @@
 // «Календарь»: месяц, цвет дня по статусу, тап — подробности дня.
 
 import { html, monthKey, shiftMonth, monthTitle, monthDays, isoDow, dayTitle, WD_SHORT } from '../util.js';
-import { DAY_STATE, DAY_STATUS, MUSCLES, REVIEW, effectiveStatus, dayState, dayCounts, setPoints, signed, multTag, amount, unitOf } from '../logic.js';
+import { DAY_STATE, DAY_STATUS, MUSCLES, REVIEW, effectiveStatus, dayState, dayCounts, setPoints, signed, multTag, amount, unitOf, ALLIN } from '../logic.js';
 
 const LEGEND = ['confirmed', 'pending', 'missed', 'sick', 'rest', 'bought', 'busy', 'planned'];
 
@@ -20,13 +20,14 @@ export async function render(el, ctx, args, alive) {
   const first = dates[0];
   const last = dates[dates.length - 1];
   const isAdmin = me.role === 'admin';
-  const [template, days, logs, mornings, exercises, theory] = await Promise.all([
+  const [template, days, logs, mornings, exercises, theory, purchases] = await Promise.all([
     api.weekTemplate(),
     api.days(athleteId, first, last),
     api.logs(athleteId, first, last),
     api.mornings(athleteId, first, last),
     api.exercises(),
     isAdmin ? api.theory(athleteId, first, last) : [],
+    api.purchases(athleteId, first),
   ]);
   if (!alive()) return;
 
@@ -37,7 +38,8 @@ export async function render(el, ctx, args, alive) {
     const plan = row?.plan ?? null;
     const state = dayState({ date, today: clock.today, startDate: settings.start_date, status, logs: dayLogs, plan });
     const th = theory.filter((t) => t.date === date);
-    return [date, { date, row, status, state, logs: dayLogs, morning: mornings.find((m) => m.date === date),
+    const allin = status === 'training' && purchases.some((p) => p.date === date && p.kind === 'allin');
+    return [date, { date, row, status, state, allin, logs: dayLogs, morning: mornings.find((m) => m.date === date),
       theory: new Map(th.map((t) => [t.set_id, t])), counts: plan ? dayCounts(plan, dayLogs) : null }];
   }));
 
@@ -68,6 +70,7 @@ export async function render(el, ctx, args, alive) {
       <div class="legend">
         ${LEGEND.map((s) => html`<div class="lg"><span class="sw day-${s}"></span>${DAY_STATE[s]}</div>`)}
         <div class="lg"><span class="sw sw-today"></span>Сегодня</div>
+        <div class="lg"><span class="sw day-planned day-allin"></span>${ALLIN}</div>
       </div>
     </section>
     ${me.role === 'athlete' ? html`<section class="card">
@@ -96,7 +99,7 @@ export async function render(el, ctx, args, alive) {
 }
 
 function cellClass(d, today, sel) {
-  return ['day', `day-${d.state}`, d.date === today ? 'day-today' : '', d.date === sel ? 'day-sel' : '']
+  return ['day', `day-${d.state}`, d.allin ? 'day-allin' : '', d.date === today ? 'day-today' : '', d.date === sel ? 'day-sel' : '']
     .filter(Boolean).join(' ');
 }
 
@@ -115,6 +118,8 @@ function detailHtml(d, clock, exercises, showTheory) {
 
   return html`
     <div class="row"><h2 class="h2">${dayTitle(d.date)}</h2><span class="chip day-chip-${d.state}">${DAY_STATE[d.state]}</span></div>
+    ${d.allin ? html`<p class="label">🎲 ${ALLIN}: каждое упражнение до конца — плюс к множителю очков, несделанное — минус.${
+      d.date >= clock.today ? '' : ' Итог — в «Цели», в истории очков.'}</p>` : ''}
     ${!isPast ? html`<p class="label">${d.status ? `План: ${DAY_STATUS[d.status].toLowerCase()}.` : 'План на этот день ещё не задан.'}
       Какой это день, решает крутой генерал.</p>` : ''}
     ${isPast && d.state === 'before' ? html`<p class="label">До старта.</p>` : ''}

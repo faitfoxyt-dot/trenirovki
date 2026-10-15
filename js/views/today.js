@@ -2,7 +2,8 @@
 // из календаря, а админу показывает день друга без возможности править.
 
 import { html, dayTitle, addDays, shortDate, debounce } from '../util.js';
-import { MUSCLES, DAY_STATUS, caption, goalText, reviewNote, dayMode, isCalibration, unitOf, unitText } from '../logic.js';
+import { MUSCLES, DAY_STATUS, caption, goalText, reviewNote, dayMode, isCalibration, unitOf, unitText,
+  ALLIN, ALLIN_STATE, signed } from '../logic.js';
 
 export async function render(el, ctx, args, alive) {
   const { api, clock, settings, me } = ctx;
@@ -20,13 +21,14 @@ export async function render(el, ctx, args, alive) {
     return;
   }
 
-  const [day, logs, mornings, sick, wallet, catalog] = await Promise.all([
+  const [day, logs, mornings, sick, wallet, catalog, allin] = await Promise.all([
     api.openDay(date, isAdmin ? athleteId : undefined),
     api.logs(athleteId, date, date),
     api.mornings(athleteId, date, date),
     date === clock.today ? api.sickRequests(athleteId, date) : [],
     date === clock.today ? api.wallet(isAdmin ? athleteId : undefined) : null,
     api.exercises(),
+    api.allinDay(date, isAdmin ? athleteId : undefined),
   ]);
   if (!alive()) return;
 
@@ -52,8 +54,11 @@ export async function render(el, ctx, args, alive) {
         ${isCalibration(ctx.rules?.current) ? html`<span class="chip">Тестовый период · очки не начисляются</span>` : ''}
         ${wallet && !beforeStart ? streakChip(wallet, ctx.rules?.current) : ''}
         ${beforeStart ? html`<span class="chip chip-warn">Старт ${shortDate(settings.start_date)}</span>` : ''}
+        ${allin && status === 'training' ? html`<span class="chip chip-allin">🎲 ALL IN</span>` : ''}
       </div>
     </header>
+
+    ${allin && status === 'training' && !beforeStart ? allinCard(allin, isToday) : ''}
 
     ${!isAdmin && isToday && clock.grace ? html`<a class="notice" href="#/day/${yesterday}">
       Вчерашний день закрыт. До 03:00 можно отметить видео за вчера →</a>` : ''}
@@ -66,7 +71,7 @@ export async function render(el, ctx, args, alive) {
     ${isToday || state.morning.muscles || state.morning.energy ? html`<section class="card" id="morning"></section>` : ''}
 
     ${status === 'training' && day.plan && !beforeStart
-      ? day.plan.map((ex) => exerciseCard(ex, date, state, editable, mode, catalog))
+      ? day.plan.map((ex) => exerciseCard(ex, date, state, editable, mode, catalog, allin))
       : html`<section class="card">
           <h2 class="h2">${status ? DAY_STATUS[status] : 'План не задан'}</h2>
           <p class="label">${restText(status, beforeStart)}</p>
@@ -97,12 +102,42 @@ function restText(status, beforeStart) {
   return 'Крутой генерал ещё не задал план на этот день.';
 }
 
-function exerciseCard(ex, date, state, editable, mode, catalog) {
+// «Всё или ничего»: что на кону сегодня и какой множитель выходит.
+function allinCard(a, isToday) {
+  const head = isToday
+    ? `Сегодня день на кону. Каждое упражнение до конца (все подходы не меньше цели) — +${a.up} к множителю очков, каждое несделанное — −${a.down}. Каждый подход — с видео.`
+    : `День был на кону: каждое упражнение до конца — +${a.up} к множителю очков, каждое несделанное — −${a.down}.`;
+  let result;
+  if (a.final) {
+    const pts = a.bonus === null || a.bonus === undefined ? ''
+      : a.test ? ` · в теории ${signed(a.bonus)} очков (видишь только ты)` : ` · ${signed(a.bonus)} очков`;
+    result = html`<p class="strong">Итог: очки дня ×${a.mult}${pts}</p>`;
+  } else {
+    const wait = isToday ? '' : ' Итог посчитается, когда генерал проверит все подходы.';
+    result = html`<p class="strong">Сейчас ×${a.mult}${a.best !== a.mult ? ` · добьёшь всё — ×${a.best}` : ''}</p>
+      ${wait ? html`<p class="label">${wait.trim()}</p>` : ''}`;
+  }
+  return html`<section class="card allin-card">
+    <div class="row"><h2 class="h2">🎲 ${ALLIN}</h2><span class="chip chip-allin">×${a.mult}</span></div>
+    <p class="label">${head}</p>
+    <ul class="allin-list">${a.items.map((i) => html`<li class="allin-${i.state}">
+      <span aria-hidden="true">${ALLIN_STATE[i.state].icon}</span><span>${i.name}</span><span class="label">${ALLIN_STATE[i.state].text}</span></li>`)}
+    </ul>
+    ${result}
+    ${a.k > 1 ? html`<p class="label">Серия даёт ×${a.k}, модификатор прибавляется к ней.</p>` : ''}
+  </section>`;
+}
+
+function exerciseCard(ex, date, state, editable, mode, catalog, allin) {
   const unit = unitOf(ex, catalog);
   const u = unitText(unit);
   const sets = Array.from({ length: ex.sets }, (_, i) => i + 1);
-  return html`<section class="card">
-    <div class="stack-4"><h2 class="h2">${ex.name}</h2><p class="label">${goalText(ex, unit)}</p></div>
+  const bet = allin?.items.find((i) => i.id === ex.id);
+  return html`<section class="card ${bet ? 'allin-ex' : ''}">
+    <div class="stack-4">
+      <div class="row"><h2 class="h2">${ex.name}</h2>${bet ? html`<span class="chip allin-bet">${ALLIN_STATE[bet.state].icon} ${
+        bet.state === 'done' ? `+${allin.up}` : bet.state === 'miss' ? `−${allin.down}` : `+${allin.up} / −${allin.down}`}</span>` : ''}</div>
+      <p class="label">${goalText(ex, unit)}</p></div>
     ${sets.map((n) => {
       const key = `${ex.id}-${n}`;
       const log = state.logs.get(key);
