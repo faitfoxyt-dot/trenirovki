@@ -1,8 +1,8 @@
 // «Цель»: путь к телефону по балансу с вехами, баланс, рейтинг, серия и история очков.
 
-import { html, dayTitle, general } from '../util.js';
+import { html, dayTitle, general, addDays } from '../util.js';
 import { POINTS, signed, isCalibration } from '../logic.js';
-import { badgesCard } from './body-parts.js';
+import { featsCard } from './feats.js';
 
 const MILESTONES = [25, 50, 75];
 const MODES = [
@@ -20,7 +20,13 @@ export async function render(el, ctx, args, alive) {
     return;
   }
 
-  const [w, rows, body] = await Promise.all([api.wallet(isAdmin ? athleteId : undefined), api.ledger(athleteId, 60), api.body(athleteId)]);
+  const today = ctx.clock.today;
+  const start = ctx.settings?.start_date ?? null;
+  const from = start ?? addDays(today, -400);
+  const [w, rows, body, days, logs, all, catalog] = await Promise.all([
+    api.wallet(isAdmin ? athleteId : undefined), api.ledger(athleteId, 60), api.body(athleteId),
+    api.days(athleteId, from, today), api.logs(athleteId, from, today), api.ledger(athleteId, 5000), api.exercises(),
+  ]);
   if (!alive()) return;
 
   const r = ctx.rules?.current;
@@ -66,7 +72,8 @@ export async function render(el, ctx, args, alive) {
           ? html`${isCalibration(r) ? ' ' : ' · сегодня '}<b class="${w.mult > 1 ? 'ok' : ''}">×${w.mult}</b>` : ''}</span></div>
     </div>
 
-    ${badgesCard(body.map((b) => ({ date: b.date, weight: Number(b.weight), fat: b.fat === null ? null : Number(b.fat) })))}
+    ${featsCard({ days, logs, ledger: all, catalog, start: from, today },
+      body.map((b) => ({ date: b.date, weight: Number(b.weight), fat: b.fat === null ? null : Number(b.fat) })))}
 
     ${isAdmin ? html`<section class="card" id="manual">
       <h2 class="h2">Очки вручную</h2>

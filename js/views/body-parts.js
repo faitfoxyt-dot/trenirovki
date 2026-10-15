@@ -1,5 +1,5 @@
 // Куски вкладки «Тело»: скан с кольцом состава и рангом, прогноз, тепловая карта, недели.
-// И ачивки за взвешивания — их показывает «Цель». rows — [{date, weight, fat|null}] по дате.
+// И ачивки за взвешивания — их показывает «Цель» (feats.js). rows — [{date, weight, fat|null}] по дате.
 
 import { html, raw, dayTitle, shortDate, addDays, isoDow } from '../util.js';
 
@@ -234,10 +234,9 @@ export function weeksCard(rows, today) {
   </section>`;
 }
 
-// ── Ачивки за взвешивания (показывает «Цель») ──
+// ── Ачивки за взвешивания (показывает «Цель» вместе с ачивками за тренировки) ──
 
-export function badgesCard(rows) {
-  const last = rows[rows.length - 1];
+export function bodyBadges(rows) {
   const first = rows[0];
   const fats = withFat(rows);
   let streak = rows.length ? 1 : 0;
@@ -248,22 +247,15 @@ export function badgesCard(rows) {
   }
   const minFat = fats.length ? Math.min(...fats.map((b) => b.fat)) : null;
   const dropFat = fats.length ? fats[0].fat - minFat : 0;
-  const list = [
+  return [
     { icon: '⚖️', name: 'Старт', sub: 'первое взвешивание', on: rows.length >= 1 },
-    { icon: '🔥', name: 'Неделя', sub: '7 дней подряд на весах', on: best >= 7 },
+    { icon: '🔁', name: 'Неделя', sub: '7 дней подряд на весах', on: best >= 7, progress: [best, 7] },
     { icon: '📉', name: '−2 кг', sub: 'от первого взвешивания', on: rows.length > 1 && first.weight - Math.min(...rows.map((b) => b.weight)) >= 2 },
     { icon: '🧊', name: 'Сушка', sub: '−2% жира', on: dropFat >= 2 },
-    { icon: '🎯', name: '50 раз', sub: 'на весах', on: rows.length >= 50 },
+    { icon: '🎯', name: '50 раз', sub: 'на весах', on: rows.length >= 50, progress: [rows.length, 50] },
     { icon: '💠', name: 'Платина', sub: 'жир ≤ 14%', on: minFat !== null && minFat <= 14 },
-    { icon: '🗓️', name: 'Месяц', sub: '30 дней подряд', on: best >= 30 },
+    { icon: '🗓️', name: 'Месяц', sub: '30 дней подряд на весах', on: best >= 30, progress: [best, 30] },
     { icon: '💎', name: 'Алмаз', sub: 'жир ≤ 11%', on: minFat !== null && minFat <= 11 },
     { icon: '👑', name: 'Легенда', sub: 'жир ≤ 8%', on: minFat !== null && minFat <= 8 },
   ];
-  const got = list.filter((b) => b.on).length;
-  return html`<section class="card">
-    <div class="row"><h2 class="h2">Ачивки</h2><span class="label">${got} из ${list.length}</span></div>
-    ${last ? '' : html`<p class="label">Открываются во вкладке «Тело»: взвешивайся, держи серию, сушись.</p>`}
-    <div class="cx-badges">${list.map((b) => html`<div class="cx-badge ${b.on ? 'cx-badge-on' : ''}">
-      <span class="cx-badge-ic" aria-hidden="true">${b.on ? b.icon : '🔒'}</span><b>${b.name}</b><span class="label">${b.sub}</span></div>`)}</div>
-  </section>`;
 }
