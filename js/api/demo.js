@@ -30,6 +30,7 @@ const db = {
   sick: [],
   ideas: [],
   theory: [],
+  body: [],
 };
 let current = ATHLETE;
 let seq = 1;
@@ -428,6 +429,16 @@ function setStatus(a, date, status) {
   if (dayStatusOf(a, T) !== 'training') putStatus(a, T, 'training');
   ensureDay(a, T).note = 'Подтягивания — медленный негатив, 3 секунды вниз';
   db.mornings.push({ athlete_id: a, date: addDays(T, -1), muscles: 'sore', energy: 4, note: null });
+  // Взвешивания за четыре недели: вес и жир понемногу снижаются, пару дней пропущено.
+  for (let k = 27; k >= 1; k -= 1) {
+    if (k === 20 || k === 9 || k === 4) continue;
+    const t = 27 - k;
+    db.body.push({
+      athlete_id: a, date: addDays(T, -k),
+      weight: Math.round((74.6 - t * 0.075 + Math.sin(t * 1.7) * 0.35) * 10) / 10,
+      fat: Math.round((17.4 - t * 0.07 + Math.sin(t * 2.3) * 0.2) * 10) / 10,
+    });
+  }
   db.ideas.push({ id: seq++, athlete_id: a, text: 'Читмил в субботу за очки', status: 'new', created_at: stamp(), decided_at: null });
   settle(a);
 }());
@@ -825,6 +836,30 @@ export const api = {
       l.points = rest.length ? rest.reduce((n, r) => n + r.rating, 0) : null;
       if (l.points === null) { l.bonus = null; l.mult = null; }
     }
+  },
+
+  // ── v3.10: взвешивание ──
+
+  async body(a, from, to) {
+    return clone(db.body.filter((b) => b.athlete_id === a && (!from || b.date >= from) && (!to || b.date <= to))
+      .sort((x, y) => (x.date < y.date ? -1 : 1)));
+  },
+
+  async saveBody(weight, fat) {
+    if (current.role === 'admin') fail('Вес записывает сам атлет');
+    if (weight === null || weight < 25 || weight > 300) fail('Вес — от 25 до 300 кг');
+    if (fat !== null && (fat < 2 || fat > 70)) fail('Жир — от 2 до 70 %');
+    const date = clock().today;
+    let b = db.body.find((x) => x.athlete_id === current.id && x.date === date);
+    if (!b) { b = { athlete_id: current.id, date }; db.body.push(b); }
+    b.weight = Math.round(weight * 10) / 10;
+    b.fat = fat === null ? null : Math.round(fat * 10) / 10;
+    return clone(b);
+  },
+
+  async deleteBody(a, date) {
+    if (current.role !== 'admin' && (a !== current.id || date !== clock().today)) fail('Удалить можно только сегодняшнее взвешивание');
+    db.body = db.body.filter((b) => !(b.athlete_id === a && b.date === date));
   },
 
   // ── v3.3 ──

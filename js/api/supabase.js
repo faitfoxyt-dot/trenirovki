@@ -254,4 +254,23 @@ export const api = {
   async deleteLedger(id) {
     return check(await sb.rpc('delete_ledger', { p_id: id }));
   },
+
+  // ── v3.10: взвешивание ──
+
+  // Все взвешивания атлета по дате: [{date, weight, fat}]; from/to — по желанию.
+  async body(athleteId, from, to) {
+    let q = sb.from('body_checks').select('date, weight, fat').eq('athlete_id', athleteId);
+    if (from) q = q.gte('date', from);
+    if (to) q = q.lte('date', to);
+    return check(await q.order('date'));
+  },
+
+  // Вес и % жира за сегодня; повторная запись заменяет.
+  async saveBody(weight, fat) {
+    return check(await sb.rpc('save_body', { p_weight: weight, p_fat: fat }));
+  },
+
+  async deleteBody(athleteId, date) {
+    return check(await sb.rpc('delete_body', { p_athlete: athleteId, p_date: date }));
+  },
 };

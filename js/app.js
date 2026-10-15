@@ -9,6 +9,7 @@ import * as plan from './views/plan.js';
 import * as goal from './views/goal.js';
 import * as shop from './views/shop.js';
 import * as rules from './views/rules.js';
+import * as body from './views/body.js';
 
 const DEMO = new URLSearchParams(location.search).has('demo');
 const { api } = DEMO ? await import('./api/demo.js') : await import('./api/supabase.js');
@@ -20,6 +21,7 @@ const ICONS = {
   plan: '<path d="M9 6h11M9 12h11M9 18h11M4 6h1M4 12h1M4 18h1"/>',
   friend: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>',
   goal: '<path d="M5 21V4h11l-2 4 2 4H5"/>',
+  body: '<rect x="3" y="3" width="18" height="18" rx="5"/><path d="M8 9a5 5 0 0 1 8 0"/><path d="M12 9l1.5-2"/>',
   shop: '<path d="M5 8h14l-1 12H6L5 8z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/>',
   rules: '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
 };
@@ -28,6 +30,7 @@ const TABS = {
   athlete: [
     { route: 'today', label: 'Сегодня', icon: 'today' },
     { route: 'calendar', label: 'Календарь', icon: 'calendar' },
+    { route: 'body', label: 'Тело', icon: 'body' },
     { route: 'goal', label: 'Цель', icon: 'goal' },
     { route: 'shop', label: 'Магазин', icon: 'shop' },
   ],
@@ -41,9 +44,9 @@ const TABS = {
 
 // Экраны друга: у атлета это вкладки, у админа — разделы вкладки «Друг».
 const FRIEND = TABS.athlete;
-const FRIEND_ROUTES = ['today', 'day', 'calendar', 'goal', 'shop'];
+const FRIEND_ROUTES = ['today', 'day', 'calendar', 'body', 'goal', 'shop'];
 
-const VIEWS = { today, day: today, calendar, goal, shop, review, plan, rules };
+const VIEWS = { today, day: today, calendar, body, goal, shop, review, plan, rules };
 
 const root = document.getElementById('app');
 const ctx = { api, demo: DEMO, toast, refresh: () => route(), signOut };
