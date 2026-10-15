@@ -430,13 +430,13 @@ function setStatus(a, date, status) {
   ensureDay(a, T).note = 'Подтягивания — медленный негатив, 3 секунды вниз';
   db.mornings.push({ athlete_id: a, date: addDays(T, -1), muscles: 'sore', energy: 4, note: null });
   // Взвешивания за четыре недели: вес и жир понемногу снижаются, пару дней пропущено.
-  for (let k = 27; k >= 1; k -= 1) {
-    if (k === 20 || k === 9 || k === 4) continue;
-    const t = 27 - k;
+  for (let k = 69; k >= 1; k -= 1) {
+    if ([62, 55, 48, 47, 33, 20, 9].includes(k)) continue;
+    const t = 69 - k;
     db.body.push({
       athlete_id: a, date: addDays(T, -k),
-      weight: Math.round((74.6 - t * 0.075 + Math.sin(t * 1.7) * 0.35) * 10) / 10,
-      fat: Math.round((17.4 - t * 0.07 + Math.sin(t * 2.3) * 0.2) * 10) / 10,
+      weight: Math.round((75.9 - t * 0.055 + Math.sin(t * 1.7) * 0.35) * 10) / 10,
+      fat: Math.round((18.9 - t * 0.052 + Math.sin(t * 2.3) * 0.2) * 10) / 10,
     });
   }
   db.ideas.push({ id: seq++, athlete_id: a, text: 'Читмил в субботу за очки', status: 'new', created_at: stamp(), decided_at: null });

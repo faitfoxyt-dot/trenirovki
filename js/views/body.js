@@ -1,8 +1,9 @@
-// «Тело»: финальное взвешивание дня (вес и % жира), состав тела, график и рекорды.
+// «Тело»: финальное взвешивание дня (вес и % жира), скан с рангом, графики и дисциплина.
 // Друг пишет только за сегодня, это же уходит в итог дня в боте. Админ смотрит и может удалить запись.
 
 import { html, raw, dayTitle, shortDate, addDays } from '../util.js';
 import { confetti } from './goal.js';
+import { num, signed, lean, RANKS, rankOf, scanCard, forecastCard, heatCard, weeksCard } from './body-parts.js';
 
 const METRICS = [
   { k: 'weight', label: 'Вес', unit: 'кг', better: 0 },
@@ -18,9 +19,6 @@ const RANGES = [
 // Выбор метрики и периода живёт, пока открыт сайт.
 const view = { metric: 'weight', range: 30, editing: false };
 
-export const num = (v) => Number(v).toFixed(1).replace('.', ',');
-const signed = (v) => (Math.abs(v) < 0.05 ? '±0' : `${v > 0 ? '+' : '−'}${num(Math.abs(v))}`);
-const lean = (b) => (b.fat === null || b.fat === undefined ? null : Math.round(b.weight * (100 - b.fat)) / 100);
 const value = (b, k) => (k === 'lean' ? lean(b) : b[k] === null || b[k] === undefined ? null : Number(b[k]));
 
 // Цвет разницы: жир вниз и сухая масса вверх — хорошо. Вес — без оценки.
@@ -45,19 +43,17 @@ export async function render(el, ctx, args, alive) {
 
   const today = clock.today;
   const last = rows[rows.length - 1] ?? null;
-  const prev = rows[rows.length - 2] ?? null;
-  const first = rows[0] ?? null;
   const todayRow = last?.date === today ? last : null;
   const hasFat = rows.some((b) => b.fat !== null);
   if (!hasFat && view.metric !== 'weight') view.metric = 'weight';
 
   el.innerHTML = String(html`
     <header class="stack-8">
-      <p class="sub">${isAdmin ? 'Экран друга · только просмотр' : 'Финальное взвешивание дня'}</p>
+      <p class="sub cx-kicker">${isAdmin ? 'Экран друга · только просмотр' : `BODY SCAN · ${dayTitle(today)}`}</p>
       <h1 class="h1">Тело</h1>
     </header>
 
-    ${last ? hero(last, prev, first) : html`<section class="card body-hero body-empty">
+    ${last ? scanCard(rows) : html`<section class="card body-hero body-empty">
       <span class="body-empty-ic" aria-hidden="true">⚖️</span>
       <h2 class="h2">Точка отсчёта</h2>
       <p class="label">${isAdmin ? 'Друг ещё не взвешивался. Первая запись появится здесь.'
@@ -68,7 +64,9 @@ export async function render(el, ctx, args, alive) {
 
     ${rows.length >= 2 ? html`<section class="card" id="chart-card"></section>` : ''}
 
-    ${rows.length >= 2 ? records(rows, today) : ''}
+    ${forecastCard(rows, today)}
+    ${last ? heatCard(rows, today) : ''}
+    ${weeksCard(rows, today)}
 
     ${rows.length ? html`<section class="card">
       <h2 class="h2">История</h2>
@@ -92,39 +90,6 @@ export async function render(el, ctx, args, alive) {
       ctx.refresh();
     } catch (e) { ctx.toast(e.message); }
   }));
-}
-
-// ── Главная карточка: вес крупно, разница, состав тела ──
-
-function hero(last, prev, first) {
-  const fromStart = first && first.date !== last.date ? last.weight - first.weight : null;
-  const l = lean(last);
-  const pl = prev ? lean(prev) : null;
-  const fatKg = l === null ? null : Math.round((last.weight - l) * 10) / 10;
-  const leanPct = last.fat === null ? null : 100 - last.fat;
-  return html`<section class="card body-hero">
-    <div class="row"><span class="label">${dayTitle(last.date)}</span>
-      ${fromStart !== null ? html`<span class="chip">${signed(fromStart)} кг с ${shortDate(first.date)}</span>` : ''}</div>
-    <p class="body-big"><span data-count="${last.weight}" data-from="${prev ? prev.weight : last.weight}">${num(last.weight)}</span><small>кг</small></p>
-    ${prev ? html`<p class="label">С прошлого взвешивания: <b class="em">${signed(last.weight - prev.weight)} кг</b></p>` : ''}
-    <div class="body-stats">
-      ${stat('Жир', last.fat === null ? '—' : `${num(last.fat)}%`, prev && prev.fat !== null && last.fat !== null ? last.fat - prev.fat : null, '%', -1)}
-      ${stat('Сухая масса', l === null ? '—' : `${num(l)} кг`, l !== null && pl !== null ? l - pl : null, 'кг', 1)}
-      ${stat('Жира в кг', fatKg === null ? '—' : `${num(fatKg)} кг`, null, '', 0)}
-    </div>
-    ${leanPct !== null ? html`<div class="comp" role="img" aria-label="Состав тела: сухая масса ${num(leanPct)}%, жир ${num(last.fat)}%">
-      <span class="comp-lean" style="--w: ${leanPct}%"></span><span class="comp-fat" style="--w: ${last.fat}%"></span>
-    </div>
-    <div class="comp-legend" aria-hidden="true">
-      <span><i class="dot dot-lean"></i>Мышцы, кости, вода · ${num(leanPct)}%</span>
-      <span><i class="dot dot-fat"></i>Жир · ${num(last.fat)}%</span>
-    </div>` : html`<p class="label">Впиши и процент жира — появится состав тела.</p>`}
-  </section>`;
-}
-
-function stat(label, text, delta, unit, better) {
-  return html`<div class="body-stat"><span class="label">${label}</span><b>${text}</b>
-    ${delta !== null ? html`<span class="body-delta ${tone(delta, better)}">${signed(delta)}${unit === '%' ? '' : ` ${unit}`}</span>` : ''}</div>`;
 }
 
 // Число «докручивается» от прошлого взвешивания до нынешнего.
@@ -208,6 +173,9 @@ function record(before, b) {
   if (!before.length) return 'Первое взвешивание — старт есть! 🚀';
   const fats = before.filter((x) => x.fat !== null);
   if (b.fat === null || !fats.length) return null;
+  const was = Math.max(...fats.map((x) => rankOf(x.fat)));
+  const now = rankOf(b.fat);
+  if (now > was) return `Новый ранг: ${RANKS[now].name} ${RANKS[now].icon}`;
   if (b.fat < Math.min(...fats.map((x) => x.fat))) return 'Рекорд: меньше всего жира за всё время! 🔥';
   if (lean(b) > Math.max(...fats.map(lean))) return 'Рекорд сухой массы — мышцы растут! 💪';
   return null;
@@ -370,23 +338,6 @@ function wireTip(el, pts, m, xy) {
   svg.addEventListener('pointermove', show);
   svg.addEventListener('pointerdown', show);
   svg.addEventListener('pointerleave', hide);
-}
-
-// ── Рекорды ──
-
-function records(rows, today) {
-  const withFat = rows.filter((b) => b.fat !== null);
-  const minFat = withFat.reduce((a, b) => (!a || b.fat < a.fat ? b : a), null);
-  const maxLean = withFat.reduce((a, b) => (!a || lean(b) > lean(a) ? b : a), null);
-  let streak = 0;
-  const dates = new Set(rows.map((b) => b.date));
-  let d = dates.has(today) ? today : addDays(today, -1);
-  while (dates.has(d)) { streak += 1; d = addDays(d, -1); }
-  return html`<div class="tiles">
-    <div class="tile"><span class="big">${minFat ? `${num(minFat.fat)}%` : '—'}</span><span class="label">Рекорд: меньше всего жира${minFat ? raw(` · ${shortDate(minFat.date)}`) : ''}</span></div>
-    <div class="tile"><span class="big">${maxLean ? num(lean(maxLean)) : '—'}</span><span class="label">Рекорд сухой массы, кг${maxLean ? raw(` · ${shortDate(maxLean.date)}`) : ''}</span></div>
-    <div class="tile"><span class="big">${streak}</span><span class="label">${streak === 1 ? 'день' : streak >= 2 && streak <= 4 ? 'дня' : 'дней'} подряд на весах</span></div>
-  </div>`;
 }
 
 // ── История: последние 7 сразу, остальное под «Показать все» ──
