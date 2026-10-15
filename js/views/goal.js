@@ -2,6 +2,7 @@
 
 import { html, dayTitle, general } from '../util.js';
 import { POINTS, signed, isCalibration } from '../logic.js';
+import { badgesCard } from './body-parts.js';
 
 const MILESTONES = [25, 50, 75];
 const MODES = [
@@ -19,7 +20,7 @@ export async function render(el, ctx, args, alive) {
     return;
   }
 
-  const [w, rows] = await Promise.all([api.wallet(isAdmin ? athleteId : undefined), api.ledger(athleteId, 60)]);
+  const [w, rows, body] = await Promise.all([api.wallet(isAdmin ? athleteId : undefined), api.ledger(athleteId, 60), api.body(athleteId)]);
   if (!alive()) return;
 
   const r = ctx.rules?.current;
@@ -64,6 +65,8 @@ export async function render(el, ctx, args, alive) {
         <span class="label">${isCalibration(r) ? 'Тест. серия' : 'Серия'}${r?.streak_from && r?.streak_step
           ? html`${isCalibration(r) ? ' ' : ' · сегодня '}<b class="${w.mult > 1 ? 'ok' : ''}">×${w.mult}</b>` : ''}</span></div>
     </div>
+
+    ${badgesCard(body.map((b) => ({ date: b.date, weight: Number(b.weight), fat: b.fat === null ? null : Number(b.fat) })))}
 
     ${isAdmin ? html`<section class="card" id="manual">
       <h2 class="h2">Очки вручную</h2>
