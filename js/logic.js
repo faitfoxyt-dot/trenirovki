@@ -173,3 +173,17 @@ export const ALLIN_STATE = {
   miss: { icon: '❌', text: 'не сделано' },
   wait: { icon: '⏳', text: 'на кону' },
 };
+
+// Замена по просьбе: что станет с упражнениями плана — как swap_items в базе.
+// [{from: пункт плана, to: {id, name, unit, sets, target_reps}}]; ids — какие (null — все с заменой).
+// Уже заменённые и те, где отмечен хоть один подход, не меняются.
+export function swapItems(plan, logs, catalog, ids = null) {
+  return (plan ?? []).flatMap((ex) => {
+    if (ex.from || (ids && !ids.includes(ex.id))) return [];
+    const e = catalog.find((x) => x.id === ex.id);
+    const to = e?.swap_id && catalog.find((x) => x.id === e.swap_id && !x.archived);
+    if (!to || logs.some((l) => l.exercise_id === ex.id && l.claimed != null)) return [];
+    return [{ from: ex, to: { id: to.id, name: to.name, unit: to.unit ?? 'reps', sets: ex.sets,
+      target_reps: e.swap_target ?? to.target_reps ?? null } }];
+  });
+}

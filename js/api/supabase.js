@@ -14,6 +14,11 @@ function check({ data, error }) {
   return data;
 }
 
+function noTable({ data, error }) {
+  if (error && /swap_requests/.test(error.message)) return [];
+  return check({ data, error });
+}
+
 function friendly(message) {
   if (/Invalid login credentials/i.test(message)) return 'Неверная почта или пароль';
   if (/Failed to fetch|NetworkError|Load failed/i.test(message)) return 'Нет связи с сервером';
@@ -75,6 +80,8 @@ export const api = {
       name: ex.name, unit: ex.unit ?? 'reps', sets: ex.sets, target_reps: ex.target_reps,
       position: ex.position, active: ex.active, archived: ex.archived ?? false,
     };
+    // Замена по просьбе (v3.11) — только если в базе уже есть эти колонки.
+    if ('swap_id' in ex) Object.assign(row, { swap_id: ex.swap_id ?? null, swap_target: ex.swap_target ?? null });
     if (ex.id) return check(await sb.from('exercises').update(row).eq('id', ex.id).select().single());
     return check(await sb.from('exercises').insert(row).select().single());
   },
@@ -199,6 +206,24 @@ export const api = {
 
   async requestSick(note) {
     return check(await sb.rpc('request_sick', { p_note: note ?? null }));
+  },
+
+  // Пока миграция 0014 не выполнена, таблицы нет — экраны работают без замен.
+  async swapRequests(athleteId, from) {
+    return noTable(await sb.from('swap_requests').select('*')
+      .eq('athlete_id', athleteId).gte('date', from).order('date', { ascending: false }));
+  },
+
+  async pendingSwaps() {
+    return noTable(await sb.from('swap_requests').select('*').eq('status', 'pending').order('created_at'));
+  },
+
+  async requestSwap(ids, note) {
+    return check(await sb.rpc('request_swap', { p_ids: ids, p_note: note ?? null }));
+  },
+
+  async decideSwap(id, approve) {
+    return check(await sb.rpc('decide_swap', { p_id: id, p_approve: approve }));
   },
 
   async decideSick(id, approve) {

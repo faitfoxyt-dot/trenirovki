@@ -2,7 +2,7 @@
 // отклонить, комментарий. Очки за подход база считает в момент решения.
 
 import { html, dayTitle } from '../util.js';
-import { MUSCLES, caption, setPoints, signed, multTag, amount, unitOf, unitText, ALLIN } from '../logic.js';
+import { MUSCLES, caption, setPoints, signed, multTag, amount, unitOf, unitText, ALLIN, swapItems } from '../logic.js';
 
 const DECISIONS = [
   { key: 'accepted', label: 'Принять' },
@@ -29,8 +29,14 @@ export async function render(el, ctx, args, alive) {
     ctx.athleteId ? api.mornings(ctx.athleteId, clock.today, clock.today) : [],
     api.pendingSick(),
     ctx.athleteId ? api.ideas(ctx.athleteId) : [],
-    api.pendingSwaps ? api.pendingSwaps() : [],
+    api.pendingSwaps(),
   ]);
+  if (!alive()) return;
+  // Что заменится по каждому запросу — по плану дня, как в базе.
+  await Promise.all(swaps.map(async (s) => {
+    const [days, logs] = await Promise.all([api.days(s.athlete_id, s.date, s.date), api.logs(s.athlete_id, s.date, s.date)]);
+    s.items = swapItems(days[0]?.plan, logs, exercises, s.exercise_ids);
+  }));
   if (!alive()) return;
 
   const exName = (id) => exercises.find((e) => e.id === id)?.name ?? 'Упражнение';
@@ -76,13 +82,14 @@ export async function render(el, ctx, args, alive) {
       </div>
     </section>`)}
     ${swaps.map((s) => html`<section class="card swap-card" data-swap="${s.id}">
-      <div class="row"><span class="chip chip-warn">🏠 Нет турника</span>${many ? html`<span class="label">${athleteName(s.athlete_id)}</span>` : ''}</div>
+      <div class="row"><span class="chip chip-warn">🔁 Замена</span>${many ? html`<span class="label">${athleteName(s.athlete_id)}</span>` : ''}</div>
       <h2 class="h2">Просит замену на ${dayTitle(s.date)}</h2>
       ${s.note ? html`<p class="label">«${s.note}»</p>` : ''}
-      <ul class="swap-list">${s.items.map((r) => html`<li>
-        <span class="swap-old">${r.from.name} · ${r.from.sets}×${r.from.target_reps ?? '—'}</span><span class="swap-arrow" aria-hidden="true">↓</span>
-        <span class="em">${r.to.name} · ${r.to.sets}×${r.to.target_reps ?? '—'}</span></li>`)}</ul>
-      <p class="label">Одобришь — подтягивания в плане дня станут этими упражнениями. Очки — по их строкам в «Правилах», серия, пропуск и «Всё или ничего» считаются по новому плану.</p>
+      ${s.items.length ? html`<ul class="swap-list">${s.items.map((r) => html`<li>
+        <span class="swap-old">${r.from.name} · ${r.from.sets}×${amount(r.from.target_reps, r.from.unit)}</span>
+        <span class="em">→ ${r.to.name} · ${r.to.sets}×${amount(r.to.target_reps, r.to.unit)}</span></li>`)}</ul>
+      <p class="label">Одобришь — в плане дня будут замены. Очки — по их строкам в «Правилах», серия, пропуск и «Всё или ничего» считаются по новому плану.</p>`
+      : html`<p class="label bad">Менять уже нечего: друг отметил эти упражнения. Можно только отказать.</p>`}
       <div class="seg">
         <button type="button" class="pill" data-approve="1">Одобрить</button>
         <button type="button" class="pill" data-approve="0">Отказать</button>

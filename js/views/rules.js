@@ -55,6 +55,8 @@ export async function render(el, ctx, args, alive) {
   const [all, complexes] = await Promise.all([api.exercises(), api.complexes()]);
   if (!alive()) return;
   const exercises = all.filter((e) => !e.archived).map((e) => ({ ...e }));
+  // Замена по просьбе есть, когда в базе уже выполнена миграция 0014 (в демо — всегда).
+  const hasSwap = all.some((e) => 'swap_id' in e);
   // В каких комплексах упражнение: «А · В».
   const inCx = (e) => complexes.map((c, i) => (c.items.some((x) => x.id === e.id) ? cxLetter(i) : null)).filter(Boolean);
   const cxNote = (e) => {
@@ -135,7 +137,7 @@ export async function render(el, ctx, args, alive) {
         </div>`
         : html`<p class="em">${e.name}${isSec(e.unit) ? ' · на время' : ''}</p>`}
       ${cxNote(e) ? html`<p class="label">${cxNote(e)}</p>` : ''}
-      ${isAdmin && e.swap !== undefined ? swapRow(e) : ''}
+      ${!hasSwap || !e.id ? '' : isAdmin ? swapRow(e) : swapText(e)}
       <div class="grid-2">${PER_EX.map((f) => html`<div class="field">
         <label class="label" for="p-${keyOf(e)}-${f.k}">${fieldLabel(f, e.unit)}</label>
         <input class="input num-in" id="p-${keyOf(e)}-${f.k}" data-pk="${f.k}" type="number" inputmode="decimal"
@@ -144,18 +146,26 @@ export async function render(el, ctx, args, alive) {
     </div>`)}
     ${exercises.length ? '' : html`<p class="label">Упражнений пока нет.</p>`}`);
   };
-  // Замена без турника: другое упражнение из списка и цель для него; подходов — столько же, сколько в плане.
+  // Замена по просьбе (нет турника, болит): другое упражнение из списка и цель для него; подходов — сколько в плане.
   const swapRow = (e) => html`<div class="swap-row">
-    <div class="field"><label class="label" for="sw-${keyOf(e)}">🏠 Замена без турника</label>
+    <div class="field"><label class="label" for="sw-${keyOf(e)}">🔁 Замена по просьбе</label>
       <select class="input" id="sw-${keyOf(e)}" data-swap>
         <option value="">— нет —</option>
-        ${exercises.filter((x) => x !== e && x.id).map((x) => html`<option value="${x.id}" ${e.swap?.id === x.id ? html`selected` : ''}>${x.name}</option>`)}
+        ${exercises.filter((x) => x !== e && x.id).map((x) => html`<option value="${x.id}" ${e.swap_id === x.id ? html`selected` : ''}>${x.name}</option>`)}
       </select></div>
     <div class="field"><label class="label" for="swt-${keyOf(e)}">Цель</label>
-      <input class="input num-in" id="swt-${keyOf(e)}" data-swap-target type="number" min="1" step="1" placeholder="—" value="${e.swap?.target_reps ?? ''}"></div>
+      <input class="input num-in" id="swt-${keyOf(e)}" data-swap-target type="number" inputmode="numeric" min="1" max="1000" step="1"
+        placeholder="—" value="${e.swap_target ?? ''}"></div>
   </div>`;
-  exercises.forEach((e) => { if (e.swap === undefined && /подтяг/i.test(e.name) && !e.home) e.swap = null; });
-  exercises.forEach((e) => { e.pts = { ...(per[e.id] ?? {}) }; e.orig = e.name; e.unit = e.unit ?? 'reps'; e.origUnit = e.unit; });
+  const swapText = (e) => {
+    const to = exercises.find((x) => x.id === e.swap_id);
+    return to ? html`<p class="label">Замена по просьбе: ${to.name}${e.swap_target ? ` · цель ${amount(e.swap_target, to.unit)}` : ''}</p>` : '';
+  };
+  exercises.forEach((e) => {
+    e.pts = { ...(per[e.id] ?? {}) }; e.orig = e.name; e.unit = e.unit ?? 'reps'; e.origUnit = e.unit;
+    if (hasSwap) { e.swap_id = e.swap_id ?? null; e.swap_target = e.swap_target ?? null; }
+    e.origSwap = `${e.swap_id}|${e.swap_target}`;
+  });
   draw();
 
   // Ввод сразу запоминаем в строке, чтобы перерисовка не теряла числа.
@@ -163,6 +173,8 @@ export async function render(el, ctx, args, alive) {
     const ex = exercises.find((x) => String(keyOf(x)) === e.target.closest('[data-key]')?.dataset.key);
     if (!ex) return;
     if (e.target.matches('[data-name]')) ex.name = e.target.value;
+    else if (e.target.matches('[data-swap]')) ex.swap_id = e.target.value ? Number(e.target.value) : null;
+    else if (e.target.matches('[data-swap-target]')) ex.swap_target = e.target.value;
     else if (e.target.dataset.pk) ex.pts[e.target.dataset.pk] = e.target.value;
   });
   list.addEventListener('click', (e) => {
@@ -202,6 +214,8 @@ export async function render(el, ctx, args, alive) {
     exercises.forEach((e) => {
       const row = {};
       if (!e.name.trim()) bad.push('название упражнения');
+      const st = String(e.swap_target ?? '').trim();
+      if (st && !(Number.isInteger(Number(st)) && Number(st) >= 1 && Number(st) <= 1000)) bad.push(`${e.name || 'новое'}: цель замены`);
       PER_EX.forEach((f) => {
         const { v, ok } = num({ value: String(e.pts[f.k] ?? '') }, f);
         if (!ok) bad.push(`${e.name || 'новое'}: ${fieldLabel(f, e.unit).toLowerCase()}`);
@@ -263,7 +277,14 @@ export async function render(el, ctx, args, alive) {
       for (const e of exercises) {
         const name = e.name.trim();
         if (e.id) {
-          if (name !== e.orig || e.unit !== e.origUnit) await api.saveExercise({ ...e, name });
+          const sw = hasSwap ? {
+            swap_id: removed.some((r) => r.id === e.swap_id) ? null : e.swap_id,
+            swap_target: String(e.swap_target ?? '').trim() === '' ? null : Number(e.swap_target),
+          } : {};
+          if (name !== e.orig || e.unit !== e.origUnit || `${sw.swap_id}|${sw.swap_target}` !== e.origSwap) {
+            await api.saveExercise({ ...e, name, ...sw });
+          }
+          Object.assign(e, sw, { origSwap: `${sw.swap_id}|${sw.swap_target}` });
         } else {
           const row = await api.saveExercise({ name, unit: e.unit, sets: 3, target_reps: null, position: 999, active: false });
           values.per_exercise[row.id] = values.per_exercise[e.tmp];
