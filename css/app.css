@@ -585,4 +585,10 @@ i.cx-h { width: 12px; height: 12px; display: inline-block; border-radius: 3px; }
 .swap-old { color: var(--muted); font-size: 14px; }
 .swap-from { margin: 0; font-size: 13px; color: var(--accent); font-weight: 600; }
 .swap-ex { border-color: var(--accent); }
-.swap-row { display: grid; grid-template-columns: 1fr 96px; gap: 8px; align-items: end; }
+.swap-row { display: grid; grid-template-columns: 1fr; gap: 8px; }
+.swap-row .num-in { max-width: 50%; }
+
+/* «Правила»: одно упражнение за раз — выбрать, добавить, удалить */
+#ex-rules { display: flex; flex-direction: column; gap: 10px; }
+#ex-rules > .label { margin: 0; }
+.ex-mode .pill { flex: 1; }
