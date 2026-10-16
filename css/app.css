@@ -569,3 +569,20 @@ i.cx-h { width: 12px; height: 12px; display: inline-block; border-radius: 3px; }
 .fx-step-dot { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 10px; font-weight: 700;
   border: 1.5px solid var(--c); color: var(--c); }
 .fx-steps li.done .fx-step-dot { background: var(--c); color: var(--bg); }
+
+/* Замена по просьбе */
+.swap-card { border-color: var(--accent); }
+.swap-details summary { list-style: none; cursor: pointer; }
+.swap-details summary::-webkit-details-marker { display: none; }
+.swap-details summary .h2 { margin: 0; }
+.swap-details[open] > * + * { margin-top: 12px; }
+.swap-details > .input, .swap-details > .ghost { width: 100%; }
+.swap-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.swap-list li { padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; display: flex; flex-direction: column; gap: 2px; }
+.swap-list li > span, .swap-pick > span { display: flex; flex-direction: column; gap: 2px; }
+.swap-pick { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; }
+.swap-pick input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--accent); flex: none; }
+.swap-old { color: var(--muted); font-size: 14px; }
+.swap-from { margin: 0; font-size: 13px; color: var(--accent); font-weight: 600; }
+.swap-ex { border-color: var(--accent); }
+.swap-row { display: grid; grid-template-columns: 1fr 96px; gap: 8px; align-items: end; }

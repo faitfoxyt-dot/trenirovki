@@ -3,7 +3,7 @@
 
 import { html, dayTitle, addDays, shortDate, debounce } from '../util.js';
 import { MUSCLES, DAY_STATUS, caption, goalText, reviewNote, dayMode, isCalibration, unitOf, unitText,
-  ALLIN, ALLIN_STATE, signed } from '../logic.js';
+  ALLIN, ALLIN_STATE, signed, swapItems } from '../logic.js';
 
 export async function render(el, ctx, args, alive) {
   const { api, clock, settings, me } = ctx;
@@ -21,7 +21,7 @@ export async function render(el, ctx, args, alive) {
     return;
   }
 
-  const [day, logs, mornings, sick, wallet, catalog, allin, weighed] = await Promise.all([
+  const [day, logs, mornings, sick, wallet, catalog, allin, weighed, swaps] = await Promise.all([
     api.openDay(date, isAdmin ? athleteId : undefined),
     api.logs(athleteId, date, date),
     api.mornings(athleteId, date, date),
@@ -30,6 +30,7 @@ export async function render(el, ctx, args, alive) {
     api.exercises(),
     api.allinDay(date, isAdmin ? athleteId : undefined),
     !isAdmin && date === clock.today ? api.body(athleteId, date, date) : [],
+    date === clock.today ? api.swapRequests(athleteId, date) : [],
   ]);
   if (!alive()) return;
 
@@ -40,6 +41,7 @@ export async function render(el, ctx, args, alive) {
     logs: new Map(logs.map((l) => [`${l.exercise_id}-${l.set_no}`, l])),
     sick: sick.find((s) => s.date === date) ?? null,
     training: status === 'training',
+    swap: swaps.find((s) => s.date === date) ?? null,
   };
   const isToday = date === clock.today;
   const beforeStart = settings.start_date && date < settings.start_date;
@@ -71,6 +73,8 @@ export async function render(el, ctx, args, alive) {
 
     ${isToday || state.morning.muscles || state.morning.energy ? html`<section class="card" id="morning"></section>` : ''}
 
+    ${status === 'training' && day.plan && !beforeStart && isToday ? html`<section class="card swap-card" id="swap" hidden></section>` : ''}
+
     ${status === 'training' && day.plan && !beforeStart
       ? day.plan.map((ex) => exerciseCard(ex, date, state, editable, mode, catalog, allin))
       : html`<section class="card">
@@ -84,6 +88,9 @@ export async function render(el, ctx, args, alive) {
     ${status === 'training' && !isAdmin && isToday ? html`<p class="label center">Каждый подход сохраняется сразу.<br>
       День закроется в 00:00, видео можно отметить до 03:00.</p>` : ''}
   `);
+
+  const swapEl = el.querySelector('#swap');
+  if (swapEl) renderSwap(swapEl, ctx, state, day.plan, logs, catalog, !isAdmin && mode === 'open');
 
   const morningEl = el.querySelector('#morning');
   if (morningEl) renderMorning(morningEl, ctx, state, !isAdmin && isToday);
@@ -137,8 +144,9 @@ function exerciseCard(ex, date, state, editable, mode, catalog, allin) {
   const u = unitText(unit);
   const sets = Array.from({ length: ex.sets }, (_, i) => i + 1);
   const bet = allin?.items.find((i) => i.id === ex.id);
-  return html`<section class="card ${bet ? 'allin-ex' : ''}">
+  return html`<section class="card ${bet ? 'allin-ex' : ''} ${ex.from ? 'swap-ex' : ''}">
     <div class="stack-4">
+      ${ex.from ? html`<p class="swap-from">🔁 Замена · вместо «${ex.from.name}»</p>` : ''}
       <div class="row"><h2 class="h2">${ex.name}</h2>${bet ? html`<span class="chip allin-bet">${ALLIN_STATE[bet.state].icon} ${
         bet.state === 'done' ? `+${allin.up}` : bet.state === 'miss' ? `−${allin.down}` : `+${allin.up} / −${allin.down}`}</span>` : ''}</div>
       <p class="label">${goalText(ex, unit)}</p></div>
@@ -238,6 +246,53 @@ async function copy(text) {
     ta.remove();
     return ok;
   }
+}
+
+// ── Замена по просьбе: нет турника, болит, негде ──
+
+function renderSwap(el, ctx, state, plan, logs, catalog, editable) {
+  const s = state.swap;
+  const swapped = plan.filter((ex) => ex.from);
+  const items = swapItems(plan, logs, catalog);
+  const asked = s?.status === 'pending' ? swapItems(plan, logs, catalog, s.exercise_ids) : [];
+  const row = (r, box) => html`<li>
+    ${box ? html`<label class="swap-pick"><input type="checkbox" value="${r.from.id}"><span>` : html`<span>`}
+      <span class="swap-old">${r.from.name}</span>
+      <span class="em">→ ${r.to.name}</span>
+      <span class="label">${goalText(r.to, r.to.unit)}</span>
+    </span>${box ? html`</label>` : ''}</li>`;
+
+  let body;
+  if (s?.status === 'approved' || swapped.length) {
+    body = html`<div class="row"><h2 class="h2">🔁 Замена</h2><span class="chip chip-on">одобрено</span></div>
+      <p class="label">Генерал разрешил замену. Очки и серия — как обычно.</p>`;
+  } else if (s?.status === 'pending') {
+    body = html`<div class="row"><h2 class="h2">🔁 Замена</h2><span class="chip chip-warn">ждёт генерала</span></div>
+      <p class="label">Запрос у генерала. Пока делай остальное, а эти упражнения не трогай — иначе их уже не заменить.</p>
+      <ul class="swap-list">${asked.map((r) => row(r, false))}</ul>`;
+  } else if (items.length && editable) {
+    body = html`<details class="swap-details" ${s?.status === 'declined' ? html`open` : ''}>
+      <summary class="row"><h2 class="h2">🔁 Нужна замена?</h2><span class="label">Нет турника, болит…</span></summary>
+      ${s?.status === 'declined' ? html`<p class="warn-strong">Генерал отказал. Можно попросить ещё раз.</p>` : ''}
+      <p class="label">Отметь, что заменить. Генерал одобрит — в плане будет замена, очки за неё примерно те же.</p>
+      <ul class="swap-list">${items.map((r) => row(r, true))}</ul>
+      <input class="input" id="swap-note" type="text" maxlength="200" placeholder="Почему: например, нет турника">
+      <button type="button" class="ghost" id="ask-swap" disabled>Попросить замену</button>
+    </details>`;
+  } else {
+    return;
+  }
+  el.hidden = false;
+  el.innerHTML = String(body);
+  const btn = el.querySelector('#ask-swap');
+  const picked = () => [...el.querySelectorAll('.swap-pick input:checked')].map((x) => Number(x.value));
+  el.querySelectorAll('.swap-pick input').forEach((x) => x.addEventListener('change', () => { btn.disabled = !picked().length; }));
+  btn?.addEventListener('click', async () => {
+    try {
+      state.swap = await ctx.api.requestSwap(picked(), el.querySelector('#swap-note').value);
+      renderSwap(el, ctx, state, plan, logs, catalog, editable);
+    } catch (err) { ctx.toast(err.message); }
+  });
 }
 
 // ── Утро ──
