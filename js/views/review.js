@@ -23,12 +23,13 @@ function pointsTail(l) {
 
 export async function render(el, ctx, args, alive) {
   const { api, clock } = ctx;
-  const [pending, exercises, mornings, sick, ideas] = await Promise.all([
+  const [pending, exercises, mornings, sick, ideas, swaps] = await Promise.all([
     api.pendingLogs(),
     api.exercises(),
     ctx.athleteId ? api.mornings(ctx.athleteId, clock.today, clock.today) : [],
     api.pendingSick(),
     ctx.athleteId ? api.ideas(ctx.athleteId) : [],
+    api.pendingSwaps ? api.pendingSwaps() : [],
   ]);
   if (!alive()) return;
 
@@ -74,6 +75,19 @@ export async function render(el, ctx, args, alive) {
         <button type="button" class="pill" data-approve="0">Отказать</button>
       </div>
     </section>`)}
+    ${swaps.map((s) => html`<section class="card swap-card" data-swap="${s.id}">
+      <div class="row"><span class="chip chip-warn">🏠 Нет турника</span>${many ? html`<span class="label">${athleteName(s.athlete_id)}</span>` : ''}</div>
+      <h2 class="h2">Просит замену на ${dayTitle(s.date)}</h2>
+      ${s.note ? html`<p class="label">«${s.note}»</p>` : ''}
+      <ul class="swap-list">${s.items.map((r) => html`<li>
+        <span class="swap-old">${r.from.name} · ${r.from.sets}×${r.from.target_reps ?? '—'}</span><span class="swap-arrow" aria-hidden="true">↓</span>
+        <span class="em">${r.to.name} · ${r.to.sets}×${r.to.target_reps ?? '—'}</span></li>`)}</ul>
+      <p class="label">Одобришь — подтягивания в плане дня станут этими упражнениями. Очки — по их строкам в «Правилах», серия, пропуск и «Всё или ничего» считаются по новому плану.</p>
+      <div class="seg">
+        <button type="button" class="pill" data-approve="1">Одобрить</button>
+        <button type="button" class="pill" data-approve="0">Отказать</button>
+      </div>
+    </section>`)}
     ${newIdeas ? html`<a class="notice" href="#/shop">Новые идеи для магазина: ${newIdeas} →</a>` : ''}
     ${pending.length ? groups.map((g) => html`<div class="row day-head">
       <h2 class="h2">${dayTitle(g.date)}${many ? html` · <span class="label">${athleteName(g.athlete)}</span>` : ''}</h2>
@@ -103,6 +117,17 @@ export async function render(el, ctx, args, alive) {
         await api.decideSick(Number(card.dataset.sick), approve);
         card.innerHTML = String(html`<p class="saved ${approve ? 'accepted' : 'rejected'}">
           ${approve ? 'Больничный одобрен' : 'В больничном отказано'}</p>`);
+      } catch (e) { ctx.toast(e.message); }
+    }));
+  });
+
+  el.querySelectorAll('.swap-card').forEach((card) => {
+    card.querySelectorAll('[data-approve]').forEach((b) => b.addEventListener('click', async () => {
+      const approve = b.dataset.approve === '1';
+      try {
+        await api.decideSwap(Number(card.dataset.swap), approve);
+        card.innerHTML = String(html`<p class="saved ${approve ? 'accepted' : 'rejected'}">
+          ${approve ? 'Замена одобрена: план дня обновлён' : 'В замене отказано'}</p>`);
       } catch (e) { ctx.toast(e.message); }
     }));
   });

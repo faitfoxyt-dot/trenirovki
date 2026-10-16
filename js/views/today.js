@@ -21,7 +21,7 @@ export async function render(el, ctx, args, alive) {
     return;
   }
 
-  const [day, logs, mornings, sick, wallet, catalog, allin, weighed] = await Promise.all([
+  const [day, logs, mornings, sick, wallet, catalog, allin, weighed, swaps] = await Promise.all([
     api.openDay(date, isAdmin ? athleteId : undefined),
     api.logs(athleteId, date, date),
     api.mornings(athleteId, date, date),
@@ -30,6 +30,7 @@ export async function render(el, ctx, args, alive) {
     api.exercises(),
     api.allinDay(date, isAdmin ? athleteId : undefined),
     !isAdmin && date === clock.today ? api.body(athleteId, date, date) : [],
+    date === clock.today && api.swapRequests ? api.swapRequests(athleteId, date) : [],
   ]);
   if (!alive()) return;
 
@@ -40,6 +41,7 @@ export async function render(el, ctx, args, alive) {
     logs: new Map(logs.map((l) => [`${l.exercise_id}-${l.set_no}`, l])),
     sick: sick.find((s) => s.date === date) ?? null,
     training: status === 'training',
+    swap: swaps.find((s) => s.date === date) ?? null,
   };
   const isToday = date === clock.today;
   const beforeStart = settings.start_date && date < settings.start_date;
@@ -71,6 +73,8 @@ export async function render(el, ctx, args, alive) {
 
     ${isToday || state.morning.muscles || state.morning.energy ? html`<section class="card" id="morning"></section>` : ''}
 
+    ${status === 'training' && day.plan && !beforeStart && isToday ? html`<section class="card swap-card" id="swap"></section>` : ''}
+
     ${status === 'training' && day.plan && !beforeStart
       ? day.plan.map((ex) => exerciseCard(ex, date, state, editable, mode, catalog, allin))
       : html`<section class="card">
@@ -84,6 +88,9 @@ export async function render(el, ctx, args, alive) {
     ${status === 'training' && !isAdmin && isToday ? html`<p class="label center">Каждый подход сохраняется сразу.<br>
       День закроется в 00:00, видео можно отметить до 03:00.</p>` : ''}
   `);
+
+  const swapEl = el.querySelector('#swap');
+  if (swapEl) renderSwap(swapEl, ctx, state, day.plan, logs, catalog, !isAdmin && mode === 'open');
 
   const morningEl = el.querySelector('#morning');
   if (morningEl) renderMorning(morningEl, ctx, state, !isAdmin && isToday);
@@ -137,8 +144,9 @@ function exerciseCard(ex, date, state, editable, mode, catalog, allin) {
   const u = unitText(unit);
   const sets = Array.from({ length: ex.sets }, (_, i) => i + 1);
   const bet = allin?.items.find((i) => i.id === ex.id);
-  return html`<section class="card ${bet ? 'allin-ex' : ''}">
+  return html`<section class="card ${bet ? 'allin-ex' : ''} ${ex.from ? 'swap-ex' : ''}">
     <div class="stack-4">
+      ${ex.from ? html`<p class="swap-from">🏠 Замена · вместо «${ex.from.name}»</p>` : ''}
       <div class="row"><h2 class="h2">${ex.name}</h2>${bet ? html`<span class="chip allin-bet">${ALLIN_STATE[bet.state].icon} ${
         bet.state === 'done' ? `+${allin.up}` : bet.state === 'miss' ? `−${allin.down}` : `+${allin.up} / −${allin.down}`}</span>` : ''}</div>
       <p class="label">${goalText(ex, unit)}</p></div>
@@ -238,6 +246,53 @@ async function copy(text) {
     ta.remove();
     return ok;
   }
+}
+
+// ── Нет турника: замена подтягиваний ──
+
+// Что заменится: упражнения плана с заменой в каталоге, где ещё не отмечен ни один подход.
+function swapItems(plan, logs, catalog) {
+  return plan.flatMap((ex) => {
+    if (ex.from) return [];
+    const sw = catalog.find((e) => e.id === ex.id)?.swap;
+    const to = sw && catalog.find((e) => e.id === sw.id && !e.archived);
+    if (!to || logs.some((l) => l.exercise_id === ex.id && l.claimed != null)) return [];
+    return [{ from: ex, to: { ...to, sets: ex.sets, target_reps: sw.target_reps ?? to.target_reps } }];
+  });
+}
+
+function renderSwap(el, ctx, state, plan, logs, catalog, editable) {
+  const s = state.swap;
+  const swapped = plan.filter((ex) => ex.from);
+  const items = swapItems(plan, logs, catalog);
+  if (!swapped.length && !items.length) { el.remove(); return; }
+  const list = (rows) => html`<ul class="swap-list">${rows.map((r) => html`<li>
+    <span class="swap-old">${r.from.name}</span><span class="swap-arrow" aria-hidden="true">↓</span>
+    <span class="em">${r.to.name}</span><span class="label">${goalText(r.to, r.to.unit)}</span></li>`)}</ul>`;
+
+  let body;
+  if (s?.status === 'approved' || swapped.length) {
+    body = html`<div class="row"><h2 class="h2">🏠 Без турника</h2><span class="chip chip-on">одобрено</span></div>
+      <p class="label">Генерал разрешил замену. Сегодня вместо подтягиваний — упражнения дома, очки и серия как обычно.</p>`;
+  } else if (s?.status === 'pending') {
+    body = html`<div class="row"><h2 class="h2">🏠 Нет турника</h2><span class="chip chip-warn">ждёт генерала</span></div>
+      <p class="label">Запрос у генерала. Пока делай остальное — подтягивания не трогай, иначе их уже не заменить.</p>
+      ${list(items)}`;
+  } else {
+    body = html`<div class="row"><h2 class="h2">🏠 Нет турника?</h2></div>
+      ${s?.status === 'declined' ? html`<p class="warn-strong">Генерал отказал. Ищи турник 😉 Можно попросить ещё раз.</p>` : ''}
+      <p class="label">Попроси генерала заменить подтягивания на упражнения дома. Одобрит — план дня поменяется так:</p>
+      ${list(items)}
+      ${editable ? html`<input class="input" id="swap-note" type="text" maxlength="200" placeholder="Почему, если хочешь: например, в гостях">
+        <button type="button" class="ghost" id="ask-swap">Нет турника — попросить замену</button>` : ''}`;
+  }
+  el.innerHTML = String(body);
+  el.querySelector('#ask-swap')?.addEventListener('click', async () => {
+    try {
+      state.swap = await ctx.api.requestSwap(el.querySelector('#swap-note').value);
+      renderSwap(el, ctx, state, plan, logs, catalog, editable);
+    } catch (err) { ctx.toast(err.message); }
+  });
 }
 
 // ── Утро ──

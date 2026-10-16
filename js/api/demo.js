@@ -15,10 +15,13 @@ const db = {
   rules: [{ valid_from: '2000-01-01', calibration: true }],
   template: [1, 2, 3, 4, 5, 6, 7].map((dow) => ({ dow, status: dow === 7 ? 'rest' : 'training' })),
   exercises: [
-    { id: 1, name: 'Подтягивания', unit: 'reps', sets: 3, target_reps: null, position: 0, active: true, archived: false },
+    { id: 1, name: 'Подтягивания (широкий хват)', unit: 'reps', sets: 3, target_reps: null, position: 0, active: true, archived: false, swap: { id: 6, target_reps: 12 } },
     { id: 2, name: 'Пресс', unit: 'reps', sets: 3, target_reps: null, position: 1, active: true, archived: false },
     { id: 3, name: 'Отжимания на брусьях', unit: 'reps', sets: 3, target_reps: null, position: 2, active: false, archived: false },
     { id: 4, name: 'Планка', unit: 'sec', sets: 2, target_reps: 60, position: 3, active: false, archived: false },
+    { id: 5, name: 'Подтягивания (обратный хват)', unit: 'reps', sets: 2, target_reps: 9, position: 4, active: false, archived: false, swap: { id: 7, target_reps: 15 } },
+    { id: 6, name: 'Австралийские подтягивания (широкий хват)', unit: 'reps', sets: 2, target_reps: 12, position: 5, active: false, archived: false, home: true },
+    { id: 7, name: 'Австралийские подтягивания (обратный хват)', unit: 'reps', sets: 2, target_reps: 15, position: 6, active: false, archived: false, home: true },
   ],
   // Комплексы по кругу: items — [{id, sets, target_reps}].
   complexes: [{ id: 1, position: 0, items: [{ id: 1, sets: 3, target_reps: null }, { id: 2, sets: 3, target_reps: null }] }],
@@ -28,12 +31,13 @@ const db = {
   ledger: [],
   purchases: [],
   sick: [],
+  swaps: [],
   ideas: [],
   theory: [],
   body: [],
 };
 let current = ATHLETE;
-let seq = 1;
+let seq = 100;
 let frozen = null; // «сегодня» во время заполнения истории
 
 const clone = (x) => JSON.parse(JSON.stringify(x));
@@ -281,6 +285,21 @@ function settle(a) {
   }
 }
 
+// Что заменится без турника: упражнения плана, у которых в каталоге есть замена
+// и ни один подход ещё не отмечен.
+function swapItems(a, date) {
+  const plan = findDay(a, date)?.plan ?? [];
+  return plan.flatMap((ex) => {
+    if (ex.from) return [];
+    const sw = db.exercises.find((e) => e.id === ex.id)?.swap;
+    const to = sw && db.exercises.find((e) => e.id === sw.id && !e.archived);
+    if (!to) return [];
+    if (db.logs.some((l) => l.athlete_id === a && l.date === date && l.exercise_id === ex.id && l.claimed != null)) return [];
+    return [{ from: { id: ex.id, name: ex.name, sets: ex.sets, target_reps: ex.target_reps },
+      to: { id: to.id, name: to.name, unit: to.unit, sets: ex.sets, target_reps: sw.target_reps ?? to.target_reps ?? null } }];
+  });
+}
+
 // ── Действия (общие для истории и для кнопок) ──
 
 function review(l, decision, confirmed, comment) {
@@ -362,7 +381,8 @@ function setStatus(a, date, status) {
   const rulesFrom = addDays(start, 7);
   db.settings.start_date = start;
   db.rules.push({ valid_from: rulesFrom, calibration: false,
-    per_exercise: { 1: { rep: 2, set: 5, over: 2, cap: 6 }, 2: { rep: 0.5, set: 5, over: 0.5, cap: 3 }, 3: { rep: 1, set: 5 }, 4: { rep: 0.2, set: 5, over: 0.2, cap: 4 } },
+    per_exercise: { 1: { rep: 2, set: 5, over: 2, cap: 6 }, 2: { rep: 0.5, set: 5, over: 0.5, cap: 3 }, 3: { rep: 1, set: 5 }, 4: { rep: 0.2, set: 5, over: 0.2, cap: 4 },
+      5: { rep: 1, set: 5, over: 0.5, cap: 3 }, 6: { rep: 1, set: 5, over: 1, cap: 6 }, 7: { rep: 0.6, set: 5, over: 0.3, cap: 3 } },
     streak_from: 3, streak_step: 0.1, streak_max: 1.5,
     miss_penalty_pct: 10, rest_day_price: 150, purchase_limit_week: 2, phone_price: 4000,
     allin_price: 30, allin_up: 0.3, allin_down: 0.7, allin_limit_week: 1 });
@@ -427,6 +447,9 @@ function setStatus(a, date, status) {
   // Теория для тестовой недели — как пересчёт в save_rules.
   db.logs.filter((l) => isCal(rulesFor(l.date))).forEach(awardSet);
   if (dayStatusOf(a, T) !== 'training') putStatus(a, T, 'training');
+  // Сегодня в плане оба подтягивания — чтобы было что заменить без турника.
+  db.complexes[0].items = [{ id: 1, sets: 2, target_reps: 6 }, { id: 5, sets: 2, target_reps: 9 }, { id: 2, sets: 3, target_reps: 20 }];
+  db.exercises[4].active = true;
   ensureDay(a, T).note = 'Подтягивания — медленный негатив, 3 секунды вниз';
   db.mornings.push({ athlete_id: a, date: addDays(T, -1), muscles: 'sore', energy: 4, note: null });
   // Взвешивания за четыре недели: вес и жир понемногу снижаются, пару дней пропущено.
@@ -708,6 +731,49 @@ export const api = {
     s.status = approve ? 'approved' : 'declined';
     s.decided_at = stamp();
     if (approve) setStatus(s.athlete_id, s.date, 'sick');
+    return clone(s);
+  },
+
+  // ── Замена без турника ──
+
+  async swapRequests(a, from) {
+    return clone(db.swaps.filter((s) => s.athlete_id === a && s.date >= from).sort((x, y) => y.date.localeCompare(x.date)));
+  },
+
+  async pendingSwaps() {
+    needAdmin();
+    return clone(db.swaps.filter((s) => s.status === 'pending').map((s) => ({ ...s, items: swapItems(s.athlete_id, s.date) })));
+  },
+
+  async requestSwap(note) {
+    needAthlete();
+    const t = today();
+    const d = ensureDay(current.id, t);
+    if (!d || d.status !== 'training') fail('Сегодня и так нет тренировки');
+    if (!swapItems(current.id, t).length) fail('Сегодня нечего менять: подтягивания уже отмечены или их нет в плане');
+    let s = db.swaps.find((x) => x.athlete_id === current.id && x.date === t);
+    if (s && s.status !== 'declined') fail('Запрос на сегодня уже отправлен');
+    if (!s) { s = { id: seq++, athlete_id: current.id, date: t }; db.swaps.push(s); }
+    Object.assign(s, { note: (note || '').trim() || null, status: 'pending', created_at: stamp(), decided_at: null });
+    return clone(s);
+  },
+
+  async decideSwap(id, approve) {
+    needAdmin();
+    const s = db.swaps.find((x) => x.id === id) ?? fail('Запрос не найден');
+    if (s.status !== 'pending') fail('Запрос уже решён');
+    if (approve) {
+      const items = swapItems(s.athlete_id, s.date);
+      if (!items.length) fail('Менять уже нечего: подтягивания отмечены');
+      const d = findDay(s.athlete_id, s.date);
+      d.plan = d.plan.map((ex) => {
+        const it = items.find((x) => x.from.id === ex.id);
+        if (!it) return ex;
+        return { ...it.to, from: { id: ex.id, name: ex.name, sets: ex.sets, target_reps: ex.target_reps } };
+      });
+    }
+    s.status = approve ? 'approved' : 'declined';
+    s.decided_at = stamp();
     return clone(s);
   },
 

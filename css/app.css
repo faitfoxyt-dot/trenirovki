@@ -569,3 +569,13 @@ i.cx-h { width: 12px; height: 12px; display: inline-block; border-radius: 3px; }
 .fx-step-dot { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 10px; font-weight: 700;
   border: 1.5px solid var(--c); color: var(--c); }
 .fx-steps li.done .fx-step-dot { background: var(--c); color: var(--bg); }
+
+/* Нет турника: замена подтягиваний */
+.swap-card { border-color: var(--accent); }
+.swap-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.swap-list li { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--line, rgba(255,255,255,.12)); border-radius: 12px; }
+.swap-old { color: var(--muted, #8a8f98); text-decoration: line-through; font-size: 14px; }
+.swap-arrow { color: var(--accent); font-size: 13px; line-height: 1; }
+.swap-from { margin: 0; font-size: 13px; color: var(--accent); font-weight: 600; }
+.swap-ex { border-color: var(--accent); }
+.swap-row { display: grid; grid-template-columns: 1fr 96px; gap: 8px; align-items: end; }

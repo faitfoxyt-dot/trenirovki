@@ -135,6 +135,7 @@ export async function render(el, ctx, args, alive) {
         </div>`
         : html`<p class="em">${e.name}${isSec(e.unit) ? ' · на время' : ''}</p>`}
       ${cxNote(e) ? html`<p class="label">${cxNote(e)}</p>` : ''}
+      ${isAdmin && e.swap !== undefined ? swapRow(e) : ''}
       <div class="grid-2">${PER_EX.map((f) => html`<div class="field">
         <label class="label" for="p-${keyOf(e)}-${f.k}">${fieldLabel(f, e.unit)}</label>
         <input class="input num-in" id="p-${keyOf(e)}-${f.k}" data-pk="${f.k}" type="number" inputmode="decimal"
@@ -143,6 +144,17 @@ export async function render(el, ctx, args, alive) {
     </div>`)}
     ${exercises.length ? '' : html`<p class="label">Упражнений пока нет.</p>`}`);
   };
+  // Замена без турника: другое упражнение из списка и цель для него; подходов — столько же, сколько в плане.
+  const swapRow = (e) => html`<div class="swap-row">
+    <div class="field"><label class="label" for="sw-${keyOf(e)}">🏠 Замена без турника</label>
+      <select class="input" id="sw-${keyOf(e)}" data-swap>
+        <option value="">— нет —</option>
+        ${exercises.filter((x) => x !== e && x.id).map((x) => html`<option value="${x.id}" ${e.swap?.id === x.id ? html`selected` : ''}>${x.name}</option>`)}
+      </select></div>
+    <div class="field"><label class="label" for="swt-${keyOf(e)}">Цель</label>
+      <input class="input num-in" id="swt-${keyOf(e)}" data-swap-target type="number" min="1" step="1" placeholder="—" value="${e.swap?.target_reps ?? ''}"></div>
+  </div>`;
+  exercises.forEach((e) => { if (e.swap === undefined && /подтяг/i.test(e.name) && !e.home) e.swap = null; });
   exercises.forEach((e) => { e.pts = { ...(per[e.id] ?? {}) }; e.orig = e.name; e.unit = e.unit ?? 'reps'; e.origUnit = e.unit; });
   draw();
 
