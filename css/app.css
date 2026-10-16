@@ -523,3 +523,49 @@ i.cx-h { width: 12px; height: 12px; display: inline-block; border-radius: 3px; }
 .cx-badge-secret { filter: none; opacity: .8; border-style: dashed; border-color: var(--line-2); }
 .cx-badge-bar { position: absolute; left: 10px; right: 10px; bottom: 6px; height: 3px; border-radius: 2px; background: var(--line-2); overflow: hidden; }
 .cx-badge-bar i { display: block; height: 100%; background: var(--accent); }
+
+/* Ачивки с уровнями */
+.fx-head { display: flex; gap: 14px; align-items: center; padding: 12px; border-radius: 14px; background: var(--bg);
+  border: 1px solid rgba(198, 244, 50, .35); background-image: radial-gradient(80% 120% at 0% 0%, rgba(198, 244, 50, .14), transparent 60%); }
+.fx-lvl { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 72px; height: 72px; flex: none;
+  border-radius: 50%; border: 3px solid var(--accent); box-shadow: 0 0 18px rgba(198, 244, 50, .35), inset 0 0 14px rgba(198, 244, 50, .2); }
+.fx-lvl .label { font-size: 9px; text-transform: uppercase; letter-spacing: .08em; text-align: center; line-height: 1.1; }
+.fx-lvl b { font: 700 26px/1 'Unbounded', sans-serif; color: var(--accent); }
+.fx-xp { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.fx-xp .row { gap: 6px; }
+.fx-xp-bar { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.fx-xp-bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-hover)); border-radius: 4px; }
+.fx-counts { display: flex; gap: 10px; font-size: 12px; font-weight: 600; }
+.fx-counts span { display: inline-flex; align-items: center; gap: 4px; color: var(--c); }
+.fx-counts i { width: 10px; height: 11px; background: var(--c); clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%); }
+.fx-list { display: flex; flex-direction: column; gap: 8px; }
+.fx-row { border-radius: 14px; background: var(--bg); border: 1px solid var(--line); }
+.fx-row[open] { border-color: var(--line-2); }
+.fx-row-max { border-color: color-mix(in srgb, var(--c) 55%, transparent); box-shadow: 0 0 18px color-mix(in srgb, var(--c) 18%, transparent); }
+.fx-row summary { list-style: none; display: flex; gap: 12px; align-items: center; padding: 10px 12px; cursor: pointer; }
+.fx-row summary::-webkit-details-marker { display: none; }
+.fx-medal { position: relative; width: 50px; height: 56px; flex: none; display: grid; place-items: center; }
+.fx-medal svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.fx-medal path { fill: var(--surface); stroke: var(--c); stroke-width: 3; }
+.fx-medal-on path { fill: color-mix(in srgb, var(--c) 18%, var(--surface)); filter: drop-shadow(0 0 5px color-mix(in srgb, var(--c) 60%, transparent)); }
+.fx-medal-max path { stroke-width: 4; }
+.fx-medal-ic { position: relative; font-size: 22px; line-height: 1; }
+.fx-medal:not(.fx-medal-on) .fx-medal-ic { opacity: .6; filter: grayscale(1); }
+.fx-medal-lv { position: absolute; bottom: -4px; left: 50%; transform: translateX(-50%); font: 700 9px/1 'Unbounded', sans-serif;
+  padding: 3px 5px; border-radius: 6px; background: var(--c); color: var(--bg); }
+.fx-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.fx-top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.fx-top b { font-size: 15px; }
+.fx-tier { font-size: 11px; font-weight: 700; color: var(--c); text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; }
+.fx-bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.fx-bar i { display: block; height: 100%; border-radius: 3px; background: var(--c); }
+.fx-pips { display: flex; gap: 4px; }
+.fx-pips i { width: 14px; height: 4px; border-radius: 2px; background: var(--line-2); }
+.fx-pips i.on { background: var(--c); }
+.fx-steps { list-style: none; margin: 0; padding: 4px 12px 12px 74px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.fx-steps li { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+.fx-steps li b { margin-left: auto; color: var(--text); font-variant-numeric: tabular-nums; }
+.fx-steps li.done { color: var(--c); }
+.fx-step-dot { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 10px; font-weight: 700;
+  border: 1.5px solid var(--c); color: var(--c); }
+.fx-steps li.done .fx-step-dot { background: var(--c); color: var(--bg); }

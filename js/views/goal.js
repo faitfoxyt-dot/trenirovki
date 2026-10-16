@@ -72,8 +72,9 @@ export async function render(el, ctx, args, alive) {
           ? html`${isCalibration(r) ? ' ' : ' · сегодня '}<b class="${w.mult > 1 ? 'ok' : ''}">×${w.mult}</b>` : ''}</span></div>
     </div>
 
-    ${featsCard({ days, logs, ledger: all, catalog, start: from, today },
-      body.map((b) => ({ date: b.date, weight: Number(b.weight), fat: b.fat === null ? null : Number(b.fat) })))}
+    ${featsCard({ days, logs, ledger: all, catalog, start: from, today, rating: w.rating },
+      body.map((b) => ({ date: b.date, weight: Number(b.weight), fat: b.fat === null ? null : Number(b.fat) })),
+      { open: new URLSearchParams(location.search).get('open') })}
 
     ${isAdmin ? html`<section class="card" id="manual">
       <h2 class="h2">Очки вручную</h2>
