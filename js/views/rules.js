@@ -2,7 +2,7 @@
 // Админ меняет — действует сразу. Атлет видит только чтение, если Тимур включил показ.
 
 import { html } from '../util.js';
-import { POINTS, signed, amount, isSec, cxLetter } from '../logic.js';
+import { POINTS, signed, amount, isSec, cxLetter, unitText } from '../logic.js';
 import { howItWorks } from './goal.js';
 
 // Числа у каждого упражнения свои.
@@ -92,9 +92,8 @@ export async function render(el, ctx, args, alive) {
       <h2 class="h2">Упражнения и очки</h2>
       <p class="label">Очки идут за подходы, которые проверил генерал. «Полный подход» — когда добил цель.
         «Сверх цели» — доплата за каждый лишний повтор (или секунду у упражнений на время), но за день по упражнению бонус не больше потолка. Потолок — в очках, не в повторах.
-        ${isAdmin ? 'Отсюда упражнения попадают в «План».' : ''}</p>
+        ${isAdmin ? 'Отсюда упражнения попадают в «План». Выбери упражнение, чтобы поменять очки и замену, или добавь новое.' : ''}</p>
       <div id="ex-rules"></div>
-      ${isAdmin ? html`<button type="button" class="ghost" id="ex-new">+ Новое упражнение</button>` : ''}
     </section>
 
     ${GROUPS.map((g) => html`<section class="card">
@@ -125,38 +124,105 @@ export async function render(el, ctx, args, alive) {
   // Строка упражнения: key — id или «new1» для ещё не сохранённого.
   const keyOf = (e) => e.id ?? e.tmp;
   const list = el.querySelector('#ex-rules');
-  const draw = () => {
-    list.innerHTML = String(html`${exercises.map((e) => html`<div class="ex-rules" data-key="${keyOf(e)}">
-      ${isAdmin ? html`<div class="row-gap">
-          <input class="input" data-name type="text" maxlength="60" placeholder="Название упражнения" value="${e.name}" aria-label="Название">
-          <button type="button" class="ghost icon" data-del aria-label="Удалить ${e.name}">✕</button>
-        </div>
+  // Админ работает с одним упражнением за раз: выбрать и настроить, добавить новое или удалить.
+  let mode = 'pick';
+  let sel = exercises[0] ? keyOf(exercises[0]) : null;
+  const MODES = [{ k: 'pick', label: 'Выбрать' }, { k: 'add', label: 'Добавить' }, { k: 'del', label: 'Удалить' }];
+  const saved = () => exercises.filter((e) => e.id);
+  const pickOptions = (cur) => saved().map((e) => html`<option value="${e.id}" ${keyOf(e) === cur ? html`selected` : ''}>${e.name}${
+    inCx(e).length ? ` · ${inCx(e).join(' ')}` : ''}</option>`);
+  // У кого это упражнение стоит заменой.
+  const swapOf = (e) => exercises.filter((x) => x.swap_id === e.id && x !== e);
+
+  const rowHtml = (e) => html`<div class="ex-rules" data-key="${keyOf(e)}">
+      ${isAdmin ? html`<label class="label" for="name-${keyOf(e)}">Название</label>
+        <input class="input" id="name-${keyOf(e)}" data-name type="text" maxlength="60" placeholder="Например: Отжимания на брусьях" value="${e.name}">
         <div class="seg" role="group" aria-label="Как считать">
           <button type="button" class="pill ${isSec(e.unit) ? '' : 'pill-on'}" data-unit="reps" aria-pressed="${!isSec(e.unit)}">Повторы</button>
           <button type="button" class="pill ${isSec(e.unit) ? 'pill-on' : ''}" data-unit="sec" aria-pressed="${isSec(e.unit)}">На время</button>
         </div>`
         : html`<p class="em">${e.name}${isSec(e.unit) ? ' · на время' : ''}</p>`}
       ${cxNote(e) ? html`<p class="label">${cxNote(e)}</p>` : ''}
-      ${!hasSwap || !e.id ? '' : isAdmin ? swapRow(e) : swapText(e)}
+      ${cxTarget(e) ? html`<p class="label">Цель — в «Плане»: ${cxTarget(e).text}</p>` : ''}
       <div class="grid-2">${PER_EX.map((f) => html`<div class="field">
         <label class="label" for="p-${keyOf(e)}-${f.k}">${fieldLabel(f, e.unit)}</label>
         <input class="input num-in" id="p-${keyOf(e)}-${f.k}" data-pk="${f.k}" type="number" inputmode="decimal"
           min="0" step="${f.int ? 1 : f.step}" placeholder="—" value="${e.pts?.[f.k] ?? ''}" ${ro}></div>`)}
       </div>
-    </div>`)}
-    ${exercises.length ? '' : html`<p class="label">Упражнений пока нет.</p>`}`);
+      ${!hasSwap ? '' : isAdmin ? swapRow(e) : swapText(e)}
+    </div>`;
+
+  const draw = () => {
+    if (!isAdmin) {
+      list.innerHTML = String(html`${exercises.map(rowHtml)}${exercises.length ? '' : html`<p class="label">Упражнений пока нет.</p>`}`);
+      return;
+    }
+    // Недописанное новое упражнение без названия не держим, когда ушли с «Добавить».
+    if (mode !== 'add') exercises.splice(0, exercises.length, ...exercises.filter((e) => e.id || e.name.trim()));
+    let body;
+    if (mode === 'add') {
+      let e = exercises.find((x) => !x.id);
+      if (!e) { fresh += 1; e = { tmp: `new${fresh}`, name: '', unit: 'reps', pts: {}, active: false, swap_id: null, swap_target: null }; exercises.push(e); }
+      body = html`${rowHtml(e)}<button type="button" class="btn" id="ex-add">Добавить упражнение</button>`;
+    } else if (!saved().length) {
+      body = html`<p class="label">Упражнений пока нет. Нажми «Добавить».</p>`;
+    } else if (mode === 'del') {
+      const e = saved().find((x) => keyOf(x) === sel) ?? saved()[0];
+      sel = keyOf(e);
+      const warn = [cxNote(e) ? `${cxNote(e)} — оттуда уберётся.` : '',
+        swapOf(e).length ? `Оно замена для: ${swapOf(e).map((x) => x.name).join(', ')} — там замены не станет.` : ''].filter(Boolean);
+      body = html`<label class="label" for="ex-del-pick">Какое удалить</label>
+        <select class="input" id="ex-del-pick">${pickOptions(sel)}</select>
+        ${warn.length ? html`<p class="label bad">${warn.join(' ')}</p>` : ''}
+        <p class="label">Старые подходы и очки останутся.</p>
+        <button type="button" class="ghost ghost-bad" id="ex-del">Удалить «${e.name}»</button>`;
+    } else {
+      const e = saved().find((x) => keyOf(x) === sel) ?? saved()[0];
+      sel = keyOf(e);
+      body = html`<label class="label" for="ex-pick">Упражнение · всего ${saved().length}</label>
+        <select class="input" id="ex-pick">${pickOptions(sel)}</select>
+        ${rowHtml(e)}<button type="button" class="btn" id="ex-save">Сохранить упражнение</button>`;
+    }
+    list.innerHTML = String(html`<div class="seg ex-mode" role="group" aria-label="Что сделать">
+        ${MODES.map((m) => html`<button type="button" class="pill ${mode === m.k ? 'pill-on' : ''}" data-mode="${m.k}" aria-pressed="${mode === m.k}">${m.label}</button>`)}
+      </div>${body}`);
   };
   // Замена по просьбе (нет турника, болит): другое упражнение из списка и цель для него; подходов — сколько в плане.
-  const swapRow = (e) => html`<div class="swap-row">
-    <div class="field"><label class="label" for="sw-${keyOf(e)}">🔁 Замена по просьбе</label>
-      <select class="input" id="sw-${keyOf(e)}" data-swap>
-        <option value="">— нет —</option>
+  // Цель упражнения живёт в комплексах («План»): первая, где оно есть.
+  const cxTarget = (e) => {
+    const i = complexes.findIndex((c) => c.items.some((x) => x.id === e.id));
+    if (i < 0) return null;
+    const it = complexes[i].items.find((x) => x.id === e.id);
+    return { target: it.target_reps, text: `${complexes.length > 1 ? `комплекс ${cxLetter(i)}, ` : ''}${it.sets}×${amount(it.target_reps, e.unit)}` };
+  };
+  // Сколько стоит подход ровно в цель (без бонуса и серии).
+  const setCost = (e, target) => {
+    const n = (k) => Number(String(e.pts?.[k] ?? '').replace(',', '.')) || 0;
+    return target ? Math.round(target * n('rep') + n('set')) : null;
+  };
+  // Замена по просьбе: другое упражнение из списка, цель для него и сравнение очков.
+  const swapRow = (e) => {
+    const to = exercises.find((x) => x.id === e.swap_id);
+    const tgt = Number(e.swap_target) || null;
+    const mine = setCost(e, cxTarget(e)?.target);
+    const theirs = to ? setCost(to, tgt) : null;
+    return html`<div class="swap-box">
+      <p class="em">🔁 Замена по просьбе</p>
+      <p class="label">Когда друг попросит (нет турника, болит), вместо «${e.name || 'этого упражнения'}» будет это. Подходов — столько же.</p>
+      <select class="input" id="sw-${keyOf(e)}" data-swap aria-label="Замена">
+        <option value="">— без замены —</option>
         ${exercises.filter((x) => x !== e && x.id).map((x) => html`<option value="${x.id}" ${e.swap_id === x.id ? html`selected` : ''}>${x.name}</option>`)}
-      </select></div>
-    <div class="field"><label class="label" for="swt-${keyOf(e)}">Цель</label>
-      <input class="input num-in" id="swt-${keyOf(e)}" data-swap-target type="number" inputmode="numeric" min="1" max="1000" step="1"
-        placeholder="—" value="${e.swap_target ?? ''}"></div>
-  </div>`;
+      </select>
+      ${to ? html`<div class="swap-row">
+        <label class="label" for="swt-${keyOf(e)}">Цель замены, ${unitText(to.unit).many}</label>
+        <input class="input num-in" id="swt-${keyOf(e)}" data-swap-target type="number" inputmode="numeric" min="1" max="1000" step="1"
+          placeholder="—" value="${e.swap_target ?? ''}"></div>
+        <p class="label swap-cmp">Подход ровно в цель:<br>
+          ${e.name}${cxTarget(e) ? ` · ${amount(cxTarget(e).target, e.unit)}` : ''} — ${mine === null ? 'цель не задана' : POINTS(mine)}<br>
+          ${to.name}${tgt ? ` · ${amount(tgt, to.unit)}` : ''} — ${theirs === null ? 'впиши цель' : POINTS(theirs)}</p>
+        <p class="label">Очки замены — у неё самой. <button type="button" class="swap-go" data-goto="${to.id}">Настроить очки «${to.name}» →</button></p>` : ''}
+    </div>`;
+  };
   const swapText = (e) => {
     const to = exercises.find((x) => x.id === e.swap_id);
     return to ? html`<p class="label">Замена по просьбе: ${to.name}${e.swap_target ? ` · цель ${amount(e.swap_target, to.unit)}` : ''}</p>` : '';
@@ -186,21 +252,33 @@ export async function render(el, ctx, args, alive) {
       example();
       return;
     }
-    if (!e.target.closest('[data-del]')) return;
-    const i = exercises.findIndex((x) => String(keyOf(x)) === e.target.closest('[data-key]').dataset.key);
-    const ex = exercises[i];
-    const warn = inCx(ex).length ? ' Оно уберётся и из комплексов.' : '';
-    if (ex.id && !confirm(`Удалить «${ex.name}»?${warn} Старые подходы и очки останутся. Удалится после «Сохранить правила».`)) return;
-    if (ex.id) removed.push(ex);
-    exercises.splice(i, 1);
-    draw();
-    example();
+    const go = e.target.closest('[data-goto]');
+    if (go) { mode = 'pick'; sel = Number(go.dataset.goto); draw(); example(); list.scrollIntoView({ block: 'start' }); return; }
+    const m = e.target.closest('[data-mode]');
+    if (m) { mode = m.dataset.mode; draw(); example(); return; }
+    if (e.target.closest('#ex-add')) {
+      if (!exercises.find((x) => !x.id)?.name.trim()) { ctx.toast('Напиши название'); return; }
+      save('Упражнение добавлено');
+      return;
+    }
+    if (e.target.closest('#ex-save')) { save('Упражнение сохранено'); return; }
+    if (e.target.closest('#ex-del')) {
+      const ex = saved().find((x) => keyOf(x) === sel);
+      if (!ex || !confirm(`Удалить «${ex.name}»? Старые подходы и очки останутся.`)) return;
+      removed.push(ex);
+      exercises.splice(exercises.indexOf(ex), 1);
+      sel = saved()[0] ? keyOf(saved()[0]) : null;
+      save(`«${ex.name}» удалено`);
+    }
   });
-  el.querySelector('#ex-new')?.addEventListener('click', () => {
-    fresh += 1;
-    exercises.push({ tmp: `new${fresh}`, name: '', unit: 'reps', pts: {}, active: false });
-    draw();
-    list.querySelector(`[data-key="new${fresh}"] [data-name]`).focus();
+  list.addEventListener('change', (e) => {
+    if (e.target.matches('#ex-pick, #ex-del-pick')) { sel = Number(e.target.value); draw(); example(); }
+    // Сменили замену или числа — пересчитать сравнение очков.
+    if (e.target.matches('[data-swap], [data-swap-target], [data-pk]') && mode !== 'del' && isAdmin) {
+      const id = e.target.id;
+      draw();
+      document.getElementById(id)?.focus();
+    }
   });
 
   const read = () => {
@@ -211,7 +289,7 @@ export async function render(el, ctx, args, alive) {
       if (!ok) bad.push(f.label);
       out[f.k] = v;
     });
-    exercises.forEach((e) => {
+    exercises.filter((e) => e.id || e.name.trim()).forEach((e) => {
       const row = {};
       if (!e.name.trim()) bad.push('название упражнения');
       const st = String(e.swap_target ?? '').trim();
@@ -267,7 +345,8 @@ export async function render(el, ctx, args, alive) {
     } catch (err) { ctx.toast(err.message); e.target.checked = !e.target.checked; }
   });
 
-  el.querySelector('#save')?.addEventListener('click', async () => {
+  // Сохраняет всё сразу: упражнения (новые, изменённые, удалённые) и числа правил.
+  const save = async (okText = 'Правила сохранены') => {
     const err = el.querySelector('#rules-error');
     const { values, bad } = read();
     if (bad.length) { err.textContent = `Проверь: ${bad.join(', ')}. Нужны числа не меньше нуля, где-то — целые.`; return; }
@@ -276,6 +355,7 @@ export async function render(el, ctx, args, alive) {
       // Сначала упражнения: новым нужен id, удалённые уходят из списка и из комплекса.
       for (const e of exercises) {
         const name = e.name.trim();
+        if (!e.id && !name) continue;
         if (e.id) {
           const sw = hasSwap ? {
             swap_id: removed.some((r) => r.id === e.swap_id) ? null : e.swap_id,
@@ -286,10 +366,13 @@ export async function render(el, ctx, args, alive) {
           }
           Object.assign(e, sw, { origSwap: `${sw.swap_id}|${sw.swap_target}` });
         } else {
-          const row = await api.saveExercise({ name, unit: e.unit, sets: 3, target_reps: null, position: 999, active: false });
+          const sw = hasSwap ? { swap_id: e.swap_id ?? null,
+            swap_target: String(e.swap_target ?? '').trim() === '' ? null : Number(e.swap_target) } : {};
+          const row = await api.saveExercise({ name, unit: e.unit, sets: 3, target_reps: null, position: 999, active: false, ...sw });
           values.per_exercise[row.id] = values.per_exercise[e.tmp];
           delete values.per_exercise[e.tmp];
-          Object.assign(e, { id: row.id, tmp: undefined });
+          Object.assign(e, { id: row.id, tmp: undefined, origSwap: `${sw.swap_id}|${sw.swap_target}` });
+          if (mode === 'add') { mode = 'pick'; sel = row.id; }
         }
         e.orig = name;
         e.origUnit = e.unit;
@@ -298,8 +381,9 @@ export async function render(el, ctx, args, alive) {
       await api.saveRules(values);
       ctx.rules = await api.rules();
       el.querySelector('#saved').textContent = 'Сохранено · действует сразу';
-      ctx.toast('Правила сохранены');
+      ctx.toast(okText);
       draw();
-    } catch (e) { err.textContent = e.message; }
-  });
+    } catch (e) { err.textContent = e.message; ctx.toast(e.message); }
+  };
+  el.querySelector('#save')?.addEventListener('click', () => save());
 }
