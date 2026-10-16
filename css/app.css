@@ -585,8 +585,11 @@ i.cx-h { width: 12px; height: 12px; display: inline-block; border-radius: 3px; }
 .swap-old { color: var(--muted); font-size: 14px; }
 .swap-from { margin: 0; font-size: 13px; color: var(--accent); font-weight: 600; }
 .swap-ex { border-color: var(--accent); }
-.swap-row { display: grid; grid-template-columns: 1fr; gap: 8px; }
-.swap-row .num-in { max-width: 50%; }
+.swap-row { display: grid; grid-template-columns: 1fr 96px; gap: 8px; align-items: center; }
+.swap-box { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; padding: 12px; border: 1px solid var(--accent); border-radius: 12px; }
+.swap-box > p { margin: 0; }
+.swap-cmp { line-height: 1.5; }
+.swap-go { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; text-align: left; cursor: pointer; }
 
 /* «Правила»: одно упражнение за раз — выбрать, добавить, удалить */
 #ex-rules { display: flex; flex-direction: column; gap: 10px; }

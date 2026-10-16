@@ -2,7 +2,7 @@
 // Админ меняет — действует сразу. Атлет видит только чтение, если Тимур включил показ.
 
 import { html } from '../util.js';
-import { POINTS, signed, amount, isSec, cxLetter } from '../logic.js';
+import { POINTS, signed, amount, isSec, cxLetter, unitText } from '../logic.js';
 import { howItWorks } from './goal.js';
 
 // Числа у каждого упражнения свои.
@@ -143,12 +143,13 @@ export async function render(el, ctx, args, alive) {
         </div>`
         : html`<p class="em">${e.name}${isSec(e.unit) ? ' · на время' : ''}</p>`}
       ${cxNote(e) ? html`<p class="label">${cxNote(e)}</p>` : ''}
-      ${!hasSwap ? '' : isAdmin ? swapRow(e) : swapText(e)}
+      ${cxTarget(e) ? html`<p class="label">Цель — в «Плане»: ${cxTarget(e).text}</p>` : ''}
       <div class="grid-2">${PER_EX.map((f) => html`<div class="field">
         <label class="label" for="p-${keyOf(e)}-${f.k}">${fieldLabel(f, e.unit)}</label>
         <input class="input num-in" id="p-${keyOf(e)}-${f.k}" data-pk="${f.k}" type="number" inputmode="decimal"
           min="0" step="${f.int ? 1 : f.step}" placeholder="—" value="${e.pts?.[f.k] ?? ''}" ${ro}></div>`)}
       </div>
+      ${!hasSwap ? '' : isAdmin ? swapRow(e) : swapText(e)}
     </div>`;
 
   const draw = () => {
@@ -187,16 +188,41 @@ export async function render(el, ctx, args, alive) {
       </div>${body}`);
   };
   // Замена по просьбе (нет турника, болит): другое упражнение из списка и цель для него; подходов — сколько в плане.
-  const swapRow = (e) => html`<div class="swap-row">
-    <div class="field"><label class="label" for="sw-${keyOf(e)}">🔁 Замена по просьбе</label>
-      <select class="input" id="sw-${keyOf(e)}" data-swap>
-        <option value="">— нет —</option>
+  // Цель упражнения живёт в комплексах («План»): первая, где оно есть.
+  const cxTarget = (e) => {
+    const i = complexes.findIndex((c) => c.items.some((x) => x.id === e.id));
+    if (i < 0) return null;
+    const it = complexes[i].items.find((x) => x.id === e.id);
+    return { target: it.target_reps, text: `${complexes.length > 1 ? `комплекс ${cxLetter(i)}, ` : ''}${it.sets}×${amount(it.target_reps, e.unit)}` };
+  };
+  // Сколько стоит подход ровно в цель (без бонуса и серии).
+  const setCost = (e, target) => {
+    const n = (k) => Number(String(e.pts?.[k] ?? '').replace(',', '.')) || 0;
+    return target ? Math.round(target * n('rep') + n('set')) : null;
+  };
+  // Замена по просьбе: другое упражнение из списка, цель для него и сравнение очков.
+  const swapRow = (e) => {
+    const to = exercises.find((x) => x.id === e.swap_id);
+    const tgt = Number(e.swap_target) || null;
+    const mine = setCost(e, cxTarget(e)?.target);
+    const theirs = to ? setCost(to, tgt) : null;
+    return html`<div class="swap-box">
+      <p class="em">🔁 Замена по просьбе</p>
+      <p class="label">Когда друг попросит (нет турника, болит), вместо «${e.name || 'этого упражнения'}» будет это. Подходов — столько же.</p>
+      <select class="input" id="sw-${keyOf(e)}" data-swap aria-label="Замена">
+        <option value="">— без замены —</option>
         ${exercises.filter((x) => x !== e && x.id).map((x) => html`<option value="${x.id}" ${e.swap_id === x.id ? html`selected` : ''}>${x.name}</option>`)}
-      </select></div>
-    <div class="field"><label class="label" for="swt-${keyOf(e)}">Цель замены</label>
-      <input class="input num-in" id="swt-${keyOf(e)}" data-swap-target type="number" inputmode="numeric" min="1" max="1000" step="1"
-        placeholder="—" value="${e.swap_target ?? ''}"></div>
-  </div>`;
+      </select>
+      ${to ? html`<div class="swap-row">
+        <label class="label" for="swt-${keyOf(e)}">Цель замены, ${unitText(to.unit).many}</label>
+        <input class="input num-in" id="swt-${keyOf(e)}" data-swap-target type="number" inputmode="numeric" min="1" max="1000" step="1"
+          placeholder="—" value="${e.swap_target ?? ''}"></div>
+        <p class="label swap-cmp">Подход ровно в цель:<br>
+          ${e.name}${cxTarget(e) ? ` · ${amount(cxTarget(e).target, e.unit)}` : ''} — ${mine === null ? 'цель не задана' : POINTS(mine)}<br>
+          ${to.name}${tgt ? ` · ${amount(tgt, to.unit)}` : ''} — ${theirs === null ? 'впиши цель' : POINTS(theirs)}</p>
+        <p class="label">Очки замены — у неё самой. <button type="button" class="swap-go" data-goto="${to.id}">Настроить очки «${to.name}» →</button></p>` : ''}
+    </div>`;
+  };
   const swapText = (e) => {
     const to = exercises.find((x) => x.id === e.swap_id);
     return to ? html`<p class="label">Замена по просьбе: ${to.name}${e.swap_target ? ` · цель ${amount(e.swap_target, to.unit)}` : ''}</p>` : '';
@@ -226,6 +252,8 @@ export async function render(el, ctx, args, alive) {
       example();
       return;
     }
+    const go = e.target.closest('[data-goto]');
+    if (go) { mode = 'pick'; sel = Number(go.dataset.goto); draw(); example(); list.scrollIntoView({ block: 'start' }); return; }
     const m = e.target.closest('[data-mode]');
     if (m) { mode = m.dataset.mode; draw(); example(); return; }
     if (e.target.closest('#ex-add')) {
@@ -245,6 +273,12 @@ export async function render(el, ctx, args, alive) {
   });
   list.addEventListener('change', (e) => {
     if (e.target.matches('#ex-pick, #ex-del-pick')) { sel = Number(e.target.value); draw(); example(); }
+    // Сменили замену или числа — пересчитать сравнение очков.
+    if (e.target.matches('[data-swap], [data-swap-target], [data-pk]') && mode !== 'del' && isAdmin) {
+      const id = e.target.id;
+      draw();
+      document.getElementById(id)?.focus();
+    }
   });
 
   const read = () => {
