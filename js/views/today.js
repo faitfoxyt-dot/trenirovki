@@ -3,7 +3,7 @@
 
 import { html, dayTitle, addDays, shortDate, debounce } from '../util.js';
 import { MUSCLES, DAY_STATUS, caption, goalText, reviewNote, dayMode, isCalibration, unitOf, unitText,
-  ALLIN, ALLIN_STATE, signed, swapItems } from '../logic.js';
+  ALLIN, ALLIN_STATE, signed, swapItems, pickLocked } from '../logic.js';
 
 export async function render(el, ctx, args, alive) {
   const { api, clock, settings, me } = ctx;
@@ -42,6 +42,7 @@ export async function render(el, ctx, args, alive) {
     sick: sick.find((s) => s.date === date) ?? null,
     training: status === 'training',
     swap: swaps.find((s) => s.date === date) ?? null,
+    firstPick: day?.plan?.findIndex((x) => x.pick && x.chosen === null) ?? -1, // подсказка про выбор — один раз
   };
   const isToday = date === clock.today;
   const beforeStart = settings.start_date && date < settings.start_date;
@@ -76,7 +77,8 @@ export async function render(el, ctx, args, alive) {
     ${status === 'training' && day.plan && !beforeStart && isToday ? html`<section class="card swap-card" id="swap" hidden></section>` : ''}
 
     ${status === 'training' && day.plan && !beforeStart
-      ? day.plan.map((ex) => exerciseCard(ex, date, state, editable, mode, catalog, allin))
+      ? day.plan.map((ex, i) => (ex.pick ? pickCard(ex, i, day.plan.length, date, state, editable, mode, catalog, allin, logs, isAdmin)
+        : exerciseCard(ex, date, state, editable, mode, catalog, allin)))
       : html`<section class="card">
           <h2 class="h2">${status ? DAY_STATUS[status] : 'План не задан'}</h2>
           <p class="label">${restText(status, beforeStart)}</p>
@@ -97,6 +99,42 @@ export async function render(el, ctx, args, alive) {
 
   if (editable) wireSets(el, ctx, date, state, mode);
   wireCopy(el);
+  if (!isAdmin && mode === 'open') {
+    el.querySelectorAll('[data-pick]').forEach((b) => b.addEventListener('click', async () => {
+      try {
+        await api.chooseExercise(date, Number(b.dataset.i), Number(b.dataset.pick));
+        ctx.refresh();
+      } catch (err) { ctx.toast(err.message); }
+    }));
+  }
+}
+
+// Пробный «Выбор»: два варианта на одном месте, друг берёт один. Пока не выбрал — подходы скрыты.
+function pickCard(ex, i, total, date, state, editable, mode, catalog, allin, logs, isAdmin) {
+  const locked = pickLocked(ex, logs);
+  const can = !isAdmin && mode === 'open' && !locked;
+  const tiles = html`<div class="pick-grid">${ex.pick.map((o, k) => {
+    const on = ex.chosen === k;
+    return html`<button type="button" class="pick-tile ${on ? 'pick-on' : ''}" data-pick="${k}" data-i="${i}"
+      aria-pressed="${on}" ${can && !on ? '' : html`disabled`}>
+      <span class="pick-name">${o.name}</span>
+      <span class="label">${goalText({ sets: ex.sets, target_reps: o.target_reps }, unitOf(o, catalog))}</span>
+      ${on ? html`<span class="pick-mark">✓ выбрано</span>` : ''}
+    </button>`;
+  })}</div>`;
+  if (ex.chosen === null) {
+    return html`<section class="card pick-card">
+      <p class="swap-from">🎯 Упражнение ${i + 1} из ${total} · выбери одно</p>
+      ${tiles}
+      ${isAdmin ? html`<p class="label">Друг ещё не выбрал.</p>` : mode !== 'open' ? html`<p class="label">Выбор не сделан.</p>`
+        : i === state.firstPick ? html`<p class="label">Очки за подход у обоих примерно одинаковые. Выбор можно поменять, пока не отмечен первый подход.</p>` : ''}
+    </section>`;
+  }
+  const other = ex.pick[1 - ex.chosen];
+  const head = locked || !can
+    ? html`<p class="swap-from">🎯 Выбор · второй вариант был «${other.name}»</p>`
+    : html`<div class="stack-4"><p class="swap-from">🎯 Упражнение ${i + 1} из ${total} · можно поменять до первого подхода</p>${tiles}</div>`;
+  return exerciseCard(ex, date, state, editable, mode, catalog, allin, head);
 }
 
 // Серия и множитель, на который умножаются очки за сегодняшние подходы.
@@ -139,12 +177,13 @@ function allinCard(a, isToday) {
   </section>`;
 }
 
-function exerciseCard(ex, date, state, editable, mode, catalog, allin) {
+function exerciseCard(ex, date, state, editable, mode, catalog, allin, head = '') {
   const unit = unitOf(ex, catalog);
   const u = unitText(unit);
   const sets = Array.from({ length: ex.sets }, (_, i) => i + 1);
   const bet = allin?.items.find((i) => i.id === ex.id);
-  return html`<section class="card ${bet ? 'allin-ex' : ''} ${ex.from ? 'swap-ex' : ''}">
+  return html`<section class="card ${bet ? 'allin-ex' : ''} ${ex.from ? 'swap-ex' : ''} ${ex.pick ? 'pick-card' : ''}">
+    ${head}
     <div class="stack-4">
       ${ex.from ? html`<p class="swap-from">🔁 Замена · вместо «${ex.from.name}»</p>` : ''}
       <div class="row"><h2 class="h2">${ex.name}</h2>${bet ? html`<span class="chip allin-bet">${ALLIN_STATE[bet.state].icon} ${

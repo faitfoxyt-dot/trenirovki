@@ -2,7 +2,7 @@
 // в памяти вкладки. Правила дня и очков повторяют SQL-функции из supabase/migrations.
 
 import { addDays, isoDow, tallinnNow, shortDate, WD_SHORT } from '../util.js';
-import { swapItems as planSwaps } from '../logic.js';
+import { swapItems as planSwaps, pickLocked, choiceIds } from '../logic.js';
 
 const ADMIN = { id: 'admin', role: 'admin', name: 'Тимур' };
 const ATHLETE = { id: 'athlete', role: 'athlete', name: 'Друг' };
@@ -16,7 +16,7 @@ const ex = (id, name, sets, target, swap = null, swapTarget = null, unit = 'reps
   id, name, unit, sets, target_reps: target, position: id, active: id <= 2, archived: false, swap_id: swap, swap_target: swapTarget });
 
 const db = {
-  settings: { id: 1, start_date: null, grace_hours: 3, show_rules: false, rotation_from: null, rotation_shift: 0 },
+  settings: { id: 1, start_date: null, grace_hours: 3, show_rules: false, rotation_from: null, rotation_shift: 0, choice: false },
   rules: [{ valid_from: '2000-01-01', calibration: true }],
   template: [1, 2, 3, 4, 5, 6, 7].map((dow) => ({ dow, status: dow === 7 ? 'rest' : 'training' })),
   exercises: [
@@ -41,8 +41,17 @@ const db = {
     ex(18, 'Узкие отжимания', 3, 8),
     ex(19, 'Касания плеч в планке', 3, 20),
     ex(20, 'Стульчик у стены', 3, 60, null, null, 'sec'),
+    // Для пробного «Выбора упражнения»: второй вариант в паре.
+    ex(21, 'Сгибания рук с рюкзаком', 2, 15),
+    ex(22, 'Вис на турнике', 2, 45, null, null, 'sec'),
+    ex(23, 'Отжимания ноги на диване', 2, 10),
+    ex(24, 'Французский жим рюкзака лёжа', 2, 15),
+    ex(25, 'Жим рюкзака над головой', 2, 15),
+    ex(26, 'Болгарские выпады (нога на диване)', 2, 8),
+    ex(27, 'Прыжки из приседа', 2, 12),
+    ex(28, 'Подъём ног в висе на турнике', 2, 10),
   ],
-  // Комплексы по кругу: items — [{id, sets, target_reps}].
+  // Комплексы по кругу: items — [{id, sets, target_reps, alt}], alt — второй вариант {id, target_reps} для «Выбора».
   complexes: [{ id: 1, position: 0, items: [{ id: 1, sets: 3, target_reps: null }, { id: 2, sets: 3, target_reps: null }] }],
   days: [],
   logs: [],
@@ -88,13 +97,30 @@ function complexIndex(a, date) {
   return (((db.settings.rotation_shift ?? 0) + k) % n + n) % n;
 }
 
+// Пункт плана из комплекса. В режиме «Выбор» с двумя вариантами: pick и chosen (пока не выбрал — первый).
 function currentPlan(a, date) {
   const c = db.complexes[complexIndex(a, date) ?? 0];
+  const opt = (id, target) => {
+    const e = db.exercises.find((y) => y.id === id && !y.archived);
+    return e && { id: e.id, name: e.name, unit: e.unit, target_reps: target ?? null };
+  };
   return (c?.items ?? []).map((x) => {
-    const e = db.exercises.find((y) => y.id === x.id && !y.archived);
-    return e && { id: e.id, name: e.name, unit: e.unit, sets: x.sets, target_reps: x.target_reps ?? null };
+    const main = opt(x.id, x.target_reps);
+    if (!main) return null;
+    const alt = db.settings.choice && x.alt ? opt(x.alt.id, x.alt.target_reps) : null;
+    return alt ? { ...main, sets: x.sets, pick: [main, alt], chosen: null } : { ...main, sets: x.sets };
   }).filter(Boolean);
 }
+
+// Сегодня друг ещё ничего не отметил и план не меняли вручную — день получает новый план.
+function replanToday(old) {
+  const t = today();
+  const a = ATHLETE.id;
+  const d = findDay(a, t);
+  if (d && d.status === 'training' && JSON.stringify(d.plan) === old
+    && !db.logs.some((l) => l.athlete_id === a && l.date === t && l.claimed != null)) d.plan = currentPlan(a, t);
+}
+const markActive = () => db.exercises.forEach((e) => { e.active = db.complexes.some((c) => choiceIds(c).includes(e.id)); });
 
 function ensureDay(a, date) {
   let d = findDay(a, date);
@@ -395,7 +421,10 @@ function setStatus(a, date, status) {
       9: { rep: 1.2, set: 5, over: 0.6, cap: 3 }, 10: { rep: 1, set: 5, over: 0.5, cap: 3 }, 11: { rep: 1, set: 5, over: 0.5, cap: 3 },
       12: { rep: 0.6, set: 5, over: 0.3, cap: 3 }, 13: { rep: 0.7, set: 5, over: 0.35, cap: 3 }, 14: { rep: 0.4, set: 5, over: 0.2, cap: 3 },
       15: { rep: 0.7, set: 5, over: 0.35, cap: 3 }, 16: { rep: 0.1, set: 5, over: 0.05, cap: 3 }, 17: { rep: 0.5, set: 5, over: 0.25, cap: 3 },
-      18: { rep: 1.2, set: 5, over: 0.6, cap: 3 }, 19: { rep: 0.5, set: 5, over: 0.25, cap: 3 }, 20: { rep: 0.15, set: 5, over: 0.08, cap: 3 } },
+      18: { rep: 1.2, set: 5, over: 0.6, cap: 3 }, 19: { rep: 0.5, set: 5, over: 0.25, cap: 3 }, 20: { rep: 0.15, set: 5, over: 0.08, cap: 3 },
+      21: { rep: 0.6, set: 5, over: 0.3, cap: 3 }, 22: { rep: 0.25, set: 5, over: 0.12, cap: 3 }, 23: { rep: 1.2, set: 5, over: 0.6, cap: 3 },
+      24: { rep: 0.6, set: 5, over: 0.3, cap: 3 }, 25: { rep: 0.7, set: 5, over: 0.35, cap: 3 }, 26: { rep: 1.4, set: 5, over: 0.7, cap: 3 },
+      27: { rep: 0.9, set: 5, over: 0.45, cap: 3 }, 28: { rep: 1, set: 5, over: 0.5, cap: 3 } },
     streak_from: 3, streak_step: 0.1, streak_max: 1.5,
     miss_penalty_pct: 10, rest_day_price: 150, purchase_limit_week: 2, phone_price: 4000,
     allin_price: 30, allin_up: 0.3, allin_down: 0.7, allin_limit_week: 1 });
@@ -460,15 +489,16 @@ function setStatus(a, date, status) {
   // Теория для тестовой недели — как пересчёт в save_rules.
   db.logs.filter((l) => isCal(rulesFor(l.date))).forEach(awardSet);
   if (dayStatusOf(a, T) !== 'training') putStatus(a, T, 'training');
-  // С сегодняшнего дня — три комплекса по кругу, сегодня «Спина и бицепс» (там подтягивания — есть что заменить).
-  const it = (id, sets, target_reps) => ({ id, sets, target_reps });
+  // С сегодняшнего дня — три комплекса по кругу, сегодня «Спина и бицепс». Включён пробный «Выбор»:
+  // в каждом месте два варианта (с турником или без), очки за подход ровно в цель примерно равны.
+  const it = (id, target_reps, alt, altTarget) => ({ id, sets: 2, target_reps, alt: { id: alt, target_reps: altTarget } });
   db.complexes = [
-    [it(1, 3, 6), it(3, 3, 9), it(7, 3, 15)],
-    [it(5, 3, 12), it(8, 3, 12), it(9, 3, 8)],
-    [it(6, 3, 20), it(10, 3, 10), it(2, 2, 15), it(4, 2, 90)],
+    [it(1, 6, 11, 15), it(3, 9, 21, 15), it(22, 45, 7, 15)],
+    [it(5, 12, 23, 10), it(8, 12, 24, 15), it(9, 8, 25, 15)],
+    [it(6, 20, 26, 8), it(10, 10, 27, 12), it(28, 10, 2, 20)],
   ].map((items, i) => ({ id: seq++, position: i, items }));
-  Object.assign(db.settings, { rotation_from: T, rotation_shift: 0 });
-  db.exercises.forEach((e) => { e.active = db.complexes.some((c) => c.items.some((x) => x.id === e.id)); });
+  Object.assign(db.settings, { rotation_from: T, rotation_shift: 0, choice: true });
+  markActive();
   ensureDay(a, T).note = 'Подтягивания — медленный негатив, 3 секунды вниз';
   db.mornings.push({ athlete_id: a, date: addDays(T, -1), muscles: 'sore', energy: 4, note: null });
   // Взвешивания за четыре недели: вес и жир понемногу снижаются, пару дней пропущено.
@@ -510,7 +540,9 @@ export const api = {
 
   async updateSettings(patch) {
     needAdmin();
+    const old = JSON.stringify(currentPlan(ATHLETE.id, today()));
     Object.assign(db.settings, patch);
+    if ('choice' in patch) replanToday(old);
   },
 
   async weekTemplate() { return clone(db.template); },
@@ -556,19 +588,32 @@ export const api = {
       if (c.some((x) => x.sets < 1 || x.sets > 10 || (x.target_reps != null && (x.target_reps < 1 || x.target_reps > 1000)))) {
         fail('Подходов — от 1 до 10, цель — от 1 до 1000');
       }
-      if (new Set(c.map((x) => x.id)).size !== c.length) fail('Упражнение повторяется в одном комплексе');
+      if (c.some((x) => x.alt && (!db.exercises.some((e) => e.id === x.alt.id && !e.archived)
+        || (x.alt.target_reps != null && (x.alt.target_reps < 1 || x.alt.target_reps > 1000))))) fail('Второй вариант: неизвестное упражнение или цель не от 1 до 1000');
+      const ids = c.flatMap((x) => (x.alt ? [x.id, x.alt.id] : [x.id]));
+      if (new Set(ids).size !== ids.length) fail('Упражнение повторяется в одном комплексе');
     }
     const t = today();
-    const a = ATHLETE.id;
-    const old = JSON.stringify(currentPlan(a, t));
+    const old = JSON.stringify(currentPlan(ATHLETE.id, t));
     db.complexes = list.map((c, i) => ({ id: seq++, position: i,
-      items: c.map(({ id, sets, target_reps }) => ({ id, sets, target_reps: target_reps ?? null })) }));
+      items: c.map(({ id, sets, target_reps, alt }) => ({ id, sets, target_reps: target_reps ?? null,
+        alt: alt ? { id: alt.id, target_reps: alt.target_reps ?? null } : null })) }));
     Object.assign(db.settings, { rotation_from: t, rotation_shift: next });
-    db.exercises.forEach((e) => { e.active = db.complexes.some((c) => c.items.some((x) => x.id === e.id)); });
-    // Сегодня друг ещё ничего не отметил и план не меняли вручную — день получает новый комплекс.
-    const d = findDay(a, t);
-    if (d && d.status === 'training' && JSON.stringify(d.plan) === old
-      && !db.logs.some((l) => l.athlete_id === a && l.date === t && l.claimed != null)) d.plan = currentPlan(a, t);
+    markActive();
+    replanToday(old);
+  },
+
+  // Пробный «Выбор»: друг сам берёт один из двух вариантов (i — номер пункта плана, k — 0 или 1).
+  async chooseExercise(date, i, k) {
+    needAthlete();
+    if (date !== today()) fail('Выбрать можно только на сегодня');
+    const d = findDay(current.id, date);
+    const x = d?.plan?.[i];
+    if (!x?.pick?.[k]) fail('Тут нечего выбирать');
+    if (pickLocked(x, db.logs.filter((l) => l.athlete_id === current.id && l.date === date))) fail('Подход уже отмечен — выбор не поменять');
+    const o = x.pick[k];
+    d.plan[i] = { ...x, id: o.id, name: o.name, unit: o.unit, target_reps: o.target_reps, chosen: k };
+    return clone(d);
   },
 
   async complexSchedule(a, from, to) {
@@ -599,6 +644,7 @@ export const api = {
     if (!d || d.status !== 'training') fail('В этот день нет тренировки');
     const ex = d.plan.find((e) => e.id === exerciseId);
     if (!ex) fail('Этого упражнения нет в плане дня');
+    if (ex.pick && ex.chosen === null) fail('Сначала выбери упражнение');
     if (setNo < 1 || setNo > ex.sets) fail('Лишний подход');
     if (claimed !== null && (claimed < 0 || claimed > 1000)) fail('Число повторов вне диапазона');
 
