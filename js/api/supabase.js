@@ -93,6 +93,15 @@ export const api = {
   },
 
   // list — комплексы по порядку: [[{id, sets, target_reps}], …]; next — какой сегодня (или на ближайшей тренировке).
+  // Пробный «Выбор упражнения»: переключатель и выбор варианта (миграция 0015).
+  async setChoice(on) {
+    check(await sb.rpc('set_choice', { p_on: on }));
+  },
+
+  async chooseExercise(date, i, k) {
+    return check(await sb.rpc('choose_exercise', { p_date: date, p_i: i, p_k: k }));
+  },
+
   async saveComplexes(list, next) {
     check(await sb.rpc('save_complexes', { p_list: list, p_next: next }));
   },

@@ -595,3 +595,19 @@ i.cx-h { width: 12px; height: 12px; display: inline-block; border-radius: 3px; }
 #ex-rules { display: flex; flex-direction: column; gap: 10px; }
 #ex-rules > .label { margin: 0; }
 .ex-mode .pill { flex: 1; }
+
+/* Пробный «Выбор упражнения» */
+.pick-card { border-color: var(--accent); }
+.pick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pick-tile {
+  display: flex; flex-direction: column; gap: 4px; align-items: flex-start; text-align: left; min-height: 88px;
+  padding: 12px; border: 1px solid var(--line-2); border-radius: 12px; background: none; color: var(--text); font: inherit; cursor: pointer;
+}
+.pick-tile:disabled { cursor: default; }
+.pick-tile:disabled:not(.pick-on) { opacity: .55; }
+.pick-on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.pick-name { font-weight: 600; font-size: 15px; line-height: 1.25; }
+.pick-mark { margin-top: auto; font-size: 12px; font-weight: 600; color: var(--accent); }
+.alt-box { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px dashed var(--accent); border-radius: 12px; }
+.alt-or { margin: 0; font-size: 13px; font-weight: 600; color: var(--accent); }
+.choice-switch .chip { margin-left: 6px; }

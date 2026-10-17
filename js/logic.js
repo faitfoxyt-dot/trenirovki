@@ -174,12 +174,18 @@ export const ALLIN_STATE = {
   wait: { icon: '⏳', text: 'на кону' },
 };
 
+// Выбор упражнения (пробный режим): в пункте плана pick — два варианта [{id, name, unit, target_reps}],
+// chosen — какой выбран (null — ещё нет, тогда пункт считается первым вариантом).
+// Поменять выбор можно, пока у упражнения не отмечен ни один подход.
+export const pickLocked = (ex, logs) => logs.some((l) => l.exercise_id === ex.id && l.claimed != null);
+export const choiceIds = (c) => c.items.flatMap((x) => (x.alt ? [x.id, x.alt.id] : [x.id]));
+
 // Замена по просьбе: что станет с упражнениями плана — как swap_items в базе.
 // [{from: пункт плана, to: {id, name, unit, sets, target_reps}}]; ids — какие (null — все с заменой).
-// Уже заменённые и те, где отмечен хоть один подход, не меняются.
+// Уже заменённые, пункты с выбором и те, где отмечен хоть один подход, не меняются.
 export function swapItems(plan, logs, catalog, ids = null) {
   return (plan ?? []).flatMap((ex) => {
-    if (ex.from || (ids && !ids.includes(ex.id))) return [];
+    if (ex.from || ex.pick || (ids && !ids.includes(ex.id))) return [];
     const e = catalog.find((x) => x.id === ex.id);
     const to = e?.swap_id && catalog.find((x) => x.id === e.swap_id && !x.archived);
     if (!to || logs.some((l) => l.exercise_id === ex.id && l.claimed != null)) return [];

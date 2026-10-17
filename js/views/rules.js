@@ -58,7 +58,12 @@ export async function render(el, ctx, args, alive) {
   // Замена по просьбе есть, когда в базе уже выполнена миграция 0014 (в демо — всегда).
   const hasSwap = all.some((e) => 'swap_id' in e);
   // В каких комплексах упражнение: «А · В».
-  const inCx = (e) => complexes.map((c, i) => (c.items.some((x) => x.id === e.id) ? cxLetter(i) : null)).filter(Boolean);
+  // Пункт комплекса с этим упражнением: основной вариант или второй (для «Выбора»).
+  const cxItem = (c, id) => {
+    const x = c.items.find((y) => y.id === id || y.alt?.id === id);
+    return x && (x.id === id ? x : { sets: x.sets, target_reps: x.alt.target_reps });
+  };
+  const inCx = (e) => complexes.map((c, i) => (cxItem(c, e.id) ? cxLetter(i) : null)).filter(Boolean);
   const cxNote = (e) => {
     const l = inCx(e);
     if (!l.length) return '';
@@ -190,9 +195,9 @@ export async function render(el, ctx, args, alive) {
   // Замена по просьбе (нет турника, болит): другое упражнение из списка и цель для него; подходов — сколько в плане.
   // Цель упражнения живёт в комплексах («План»): первая, где оно есть.
   const cxTarget = (e) => {
-    const i = complexes.findIndex((c) => c.items.some((x) => x.id === e.id));
+    const i = complexes.findIndex((c) => cxItem(c, e.id));
     if (i < 0) return null;
-    const it = complexes[i].items.find((x) => x.id === e.id);
+    const it = cxItem(complexes[i], e.id);
     return { target: it.target_reps, text: `${complexes.length > 1 ? `комплекс ${cxLetter(i)}, ` : ''}${it.sets}×${amount(it.target_reps, e.unit)}` };
   };
   // Сколько стоит подход ровно в цель (без бонуса и серии).
