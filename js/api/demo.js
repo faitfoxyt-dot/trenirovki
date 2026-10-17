@@ -424,7 +424,7 @@ function setStatus(a, date, status) {
       18: { rep: 1.2, set: 5, over: 0.6, cap: 3 }, 19: { rep: 0.5, set: 5, over: 0.25, cap: 3 }, 20: { rep: 0.15, set: 5, over: 0.08, cap: 3 },
       21: { rep: 0.6, set: 5, over: 0.3, cap: 3 }, 22: { rep: 0.25, set: 5, over: 0.12, cap: 3 }, 23: { rep: 1.2, set: 5, over: 0.6, cap: 3 },
       24: { rep: 0.6, set: 5, over: 0.3, cap: 3 }, 25: { rep: 0.7, set: 5, over: 0.35, cap: 3 }, 26: { rep: 1.4, set: 5, over: 0.7, cap: 3 },
-      27: { rep: 0.9, set: 5, over: 0.45, cap: 3 }, 28: { rep: 1, set: 5, over: 0.5, cap: 3 } },
+      27: { rep: 0.9, set: 5, over: 0.45, cap: 3 }, 28: { rep: 0.75, set: 5, over: 0.38, cap: 3 } },
     streak_from: 3, streak_step: 0.1, streak_max: 1.5,
     miss_penalty_pct: 10, rest_day_price: 150, purchase_limit_week: 2, phone_price: 4000,
     allin_price: 30, allin_up: 0.3, allin_down: 0.7, allin_limit_week: 1 });
@@ -493,9 +493,9 @@ function setStatus(a, date, status) {
   // в каждом месте два варианта (с турником или без), очки за подход ровно в цель примерно равны.
   const it = (id, target_reps, alt, altTarget) => ({ id, sets: 2, target_reps, alt: { id: alt, target_reps: altTarget } });
   db.complexes = [
-    [it(1, 6, 11, 15), it(3, 9, 21, 15), it(22, 45, 7, 15)],
+    [it(1, 6, 11, 15), it(3, 9, 21, 15), it(7, 15, 22, 45)],
     [it(5, 12, 23, 10), it(8, 12, 24, 15), it(9, 8, 25, 15)],
-    [it(6, 20, 26, 8), it(10, 10, 27, 12), it(28, 10, 2, 20)],
+    [it(6, 20, 26, 8), it(10, 10, 27, 12), it(2, 15, 28, 10), { id: 4, sets: 2, target_reps: 90, alt: null }],
   ].map((items, i) => ({ id: seq++, position: i, items }));
   Object.assign(db.settings, { rotation_from: T, rotation_shift: 0, choice: true });
   markActive();
@@ -540,9 +540,14 @@ export const api = {
 
   async updateSettings(patch) {
     needAdmin();
-    const old = JSON.stringify(currentPlan(ATHLETE.id, today()));
     Object.assign(db.settings, patch);
-    if ('choice' in patch) replanToday(old);
+  },
+
+  async setChoice(on) {
+    needAdmin();
+    const old = JSON.stringify(currentPlan(ATHLETE.id, today()));
+    db.settings.choice = Boolean(on);
+    replanToday(old);
   },
 
   async weekTemplate() { return clone(db.template); },
@@ -609,7 +614,7 @@ export const api = {
     if (date !== today()) fail('Выбрать можно только на сегодня');
     const d = findDay(current.id, date);
     const x = d?.plan?.[i];
-    if (!x?.pick?.[k]) fail('Тут нечего выбирать');
+    if (d?.status !== 'training' || !x?.pick?.[k]) fail('Тут нечего выбирать');
     if (pickLocked(x, db.logs.filter((l) => l.athlete_id === current.id && l.date === date))) fail('Подход уже отмечен — выбор не поменять');
     const o = x.pick[k];
     d.plan[i] = { ...x, id: o.id, name: o.name, unit: o.unit, target_reps: o.target_reps, chosen: k };
@@ -644,7 +649,6 @@ export const api = {
     if (!d || d.status !== 'training') fail('В этот день нет тренировки');
     const ex = d.plan.find((e) => e.id === exerciseId);
     if (!ex) fail('Этого упражнения нет в плане дня');
-    if (ex.pick && ex.chosen === null) fail('Сначала выбери упражнение');
     if (setNo < 1 || setNo > ex.sets) fail('Лишний подход');
     if (claimed !== null && (claimed < 0 || claimed > 1000)) fail('Число повторов вне диапазона');
 

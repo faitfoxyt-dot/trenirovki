@@ -223,9 +223,9 @@ export async function render(el, ctx, args, alive) {
 
   el.querySelector('#cx-choice').addEventListener('change', async (e) => {
     try {
-      await api.updateSettings({ choice: e.target.checked });
+      await api.setChoice(e.target.checked);
       choice = settings.choice = e.target.checked;
-      ctx.toast(choice ? 'Выбор включён: друг увидит его в новых днях' : 'Выбор выключен');
+      ctx.toast(choice ? 'Выбор включён' : 'Выбор выключен');
       draw();
     } catch (err) { e.target.checked = choice; ctx.toast(err.message); }
   });
