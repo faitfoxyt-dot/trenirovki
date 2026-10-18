@@ -290,7 +290,12 @@ function wireSets(el, ctx, date, state, mode) {
     try {
       const saved = await ctx.api.logSet(date, exId, setNo, claimed, video);
       state.logs.set(key, saved);
-      if (saved.auto && !prev?.auto) { ctx.toast(`🫡 Подход #${row.dataset.no} подтверждён по видео`); ctx.refresh(); return; }
+      // Видео с этим номером уже ждало — база приняла подход сразу, показываем свежий день.
+      if (state.video && state.waiting.has(Number(row.dataset.no)) && claimed !== null && prev?.claimed == null) {
+        ctx.toast(`🫡 Подход #${row.dataset.no} подтверждён по видео`);
+        ctx.refresh();
+        return;
+      }
       note.innerHTML = String(noteHtml(saved, row.dataset.unit)) || 'Сохранено';
     } catch (err) {
       note.innerHTML = '';

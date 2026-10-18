@@ -35,11 +35,11 @@ export async function render(el, ctx, args, alive) {
   if (!alive()) return;
   // Номер подхода за день (#1…) — по плану дня, как его видел друг.
   const plans = new Map();
-  await Promise.all([...new Set(byVideo.map((l) => `${l.athlete_id}|${l.date}`))].map(async (k) => {
+  await Promise.all([...new Set([...byVideo, ...pending].map((l) => `${l.athlete_id}|${l.date}`))].map(async (k) => {
     const [a, d] = k.split('|');
     plans.set(k, (await api.days(a, d, d))[0]?.plan);
   }));
-  byVideo.forEach((l) => { l.no = setNumber(plans.get(`${l.athlete_id}|${l.date}`), l.exercise_id, l.set_no); });
+  [...byVideo, ...pending].forEach((l) => { l.no = setNumber(plans.get(`${l.athlete_id}|${l.date}`), l.exercise_id, l.set_no); });
   // Что заменится по каждому запросу — по плану дня, как в базе.
   await Promise.all(swaps.map(async (s) => {
     const [days, logs] = await Promise.all([api.days(s.athlete_id, s.date, s.date), api.logs(s.athlete_id, s.date, s.date)]);
@@ -111,8 +111,9 @@ export async function render(el, ctx, args, alive) {
     </div>
     ${g.logs.map((l) => html`<section class="card review-card" data-id="${l.id}" data-group="${g.key}" data-unit="${exUnit(l.exercise_id)}">
       <h2 class="h2">${exName(l.exercise_id)} · подход ${l.set_no}</h2>
-      <p class="label">Заявлено: <b class="em">${amount(l.claimed, exUnit(l.exercise_id))}</b> · видео ${l.has_video ? 'есть' : html`<span class="bad">нет</span>`}<br>
-        Подпись в Telegram: ${caption(l.date, exName(l.exercise_id), l.set_no)}</p>
+      <p class="label">Заявлено: <b class="em">${amount(l.claimed, exUnit(l.exercise_id))}</b> · видео ${l.video_url
+        ? html`<a href="${l.video_url}" target="_blank" rel="noopener">▶ смотреть</a>` : l.has_video ? 'есть' : html`<span class="bad">нет</span>`}<br>
+        Подпись в Telegram: ${l.no ? `#${l.no}` : caption(l.date, exName(l.exercise_id), l.set_no)}</p>
       <div class="review-form">${formHtml(l, null, exUnit(l.exercise_id))}</div>
     </section>`)}`) : html`<section class="card"><h2 class="h2">Всё проверено</h2>
       <p class="label">Новые подходы появятся здесь, как только друг их отметит.</p></section>`}

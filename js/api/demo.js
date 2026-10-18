@@ -698,11 +698,12 @@ export const api = {
       return clone(row);
     }
     const changed = prev.claimed !== claimed;
+    const was = prev.claimed;
     Object.assign(prev, { claimed, has_video: hasVideo });
     if (changed) {
-      Object.assign(prev, { review: 'pending', confirmed: null });
+      Object.assign(prev, { review: 'pending', confirmed: null, auto: false });
       if (prev.points != null || prev.bonus != null || db.theory.some((x) => x.set_id === prev.id)) awardSet(prev);
-      waitingVideo(prev, d.plan);
+      if (was == null) waitingVideo(prev, d.plan);
     }
     return clone(prev);
   },

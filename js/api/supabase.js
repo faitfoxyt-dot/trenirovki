@@ -155,6 +155,15 @@ export const api = {
     }));
   },
 
+  // ── Видео из Telegram ──
+  async videoSettings() { return check(await sb.rpc('video_settings')); },
+  async setVideoAuto(on) { check(await sb.rpc('set_video_auto', { p_on: on })); },
+  async waitingVideos(athleteId, date) {
+    return check(await sb.rpc('waiting_videos', { p_athlete: athleteId, p_date: date }));
+  },
+  async videoConfirmed() { return check(await sb.rpc('video_confirmed')); },
+  async undoVideo(id) { return check(await sb.rpc('undo_video', { p_id: id })); },
+
   async setDayStatus(athleteId, date, status) {
     return check(await sb.rpc('set_day_status', { p_athlete: athleteId, p_date: date, p_status: status }));
   },
