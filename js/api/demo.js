@@ -2,7 +2,7 @@
 // в памяти вкладки. Правила дня и очков повторяют SQL-функции из supabase/migrations.
 
 import { addDays, isoDow, tallinnNow, shortDate, WD_SHORT } from '../util.js';
-import { swapItems as planSwaps, pickLocked, choiceIds } from '../logic.js';
+import { swapItems as planSwaps, pickLocked, choiceIds, setNumber } from '../logic.js';
 
 const ADMIN = { id: 'admin', role: 'admin', name: 'Тимур' };
 const ATHLETE = { id: 'athlete', role: 'athlete', name: 'Друг' };
@@ -16,7 +16,8 @@ const ex = (id, name, sets, target, swap = null, swapTarget = null, unit = 'reps
   id, name, unit, sets, target_reps: target, position: id, active: id <= 2, archived: false, swap_id: swap, swap_target: swapTarget });
 
 const db = {
-  settings: { id: 1, start_date: null, grace_hours: 3, show_rules: false, rotation_from: null, rotation_shift: 0, choice: false },
+  settings: { id: 1, start_date: null, grace_hours: 3, show_rules: false, rotation_from: null, rotation_shift: 0, choice: false,
+    video_auto: false, bot_sees: false },
   rules: [{ valid_from: '2000-01-01', calibration: true }],
   template: [1, 2, 3, 4, 5, 6, 7].map((dow) => ({ dow, status: dow === 7 ? 'rest' : 'training' })),
   exercises: [
@@ -63,6 +64,7 @@ const db = {
   ideas: [],
   theory: [],
   body: [],
+  videos: [], // видео из Telegram, к которым ещё нет повторов: {athlete_id, date, no, url}
 };
 let current = ATHLETE;
 let seq = 100;
@@ -344,6 +346,23 @@ function review(l, decision, confirmed, comment) {
   settle(l.athlete_id);
 }
 
+// Видео с номером подхода пришло, и повторы уже вписаны — бот принимает подход сам.
+function videoAccept(l, url) {
+  Object.assign(l, { has_video: true, video_url: url, auto: true });
+  review(l, 'accepted');
+}
+const tgLink = (msg) => `https://t.me/c/3987236163/${msg}`;
+
+// Повторы вписаны, а видео с этим номером уже ждёт — подход подтверждается сразу.
+function waitingVideo(l, plan) {
+  if (!db.settings.video_auto || l.claimed == null) return;
+  const no = setNumber(plan, l.exercise_id, l.set_no);
+  const v = db.videos.find((x) => x.athlete_id === l.athlete_id && x.date === l.date && x.no === no);
+  if (!v) return;
+  db.videos = db.videos.filter((x) => x !== v);
+  videoAccept(l, v.url);
+}
+
 function buy(a, date) {
   const t = today();
   const r = rulesFor(t);
@@ -512,6 +531,19 @@ function setStatus(a, date, status) {
     });
   }
   db.ideas.push({ id: seq++, athlete_id: a, text: 'Читмил в субботу за очки', status: 'new', created_at: stamp(), decided_at: null });
+  // Видео из Telegram (концепт): сегодня друг взял варианты без турника и прислал 4 видео.
+  // #1–#3 подтвердил бот, к #4 повторы ещё не вписаны.
+  Object.assign(db.settings, { video_auto: true });
+  const day = ensureDay(a, T);
+  [1, 1].forEach((k, i) => { const x = day.plan[i]; const o = x.pick[k];
+    day.plan[i] = { ...x, id: o.id, name: o.name, unit: o.unit, target_reps: o.target_reps, chosen: k }; });
+  [[day.plan[0].id, 1, 15], [day.plan[0].id, 2, 16], [day.plan[1].id, 1, 15]].forEach(([id, n, r], i) => {
+    const row = { id: seq++, athlete_id: a, date: T, exercise_id: id, set_no: n, claimed: r, has_video: false,
+      review: 'pending', confirmed: null, comment: null, points: null, bonus: null };
+    db.logs.push(row);
+    videoAccept(row, tgLink(412 + i));
+  });
+  db.videos.push({ athlete_id: a, date: T, no: 4, url: tgLink(416) });
   settle(a);
 }());
 
@@ -662,6 +694,7 @@ export const api = {
       const row = { id: seq++, athlete_id: uid, date, exercise_id: exerciseId, set_no: setNo, claimed, has_video: hasVideo,
         review: 'pending', confirmed: null, comment: null, points: null, bonus: null };
       db.logs.push(row);
+      waitingVideo(row, d.plan);
       return clone(row);
     }
     const changed = prev.claimed !== claimed;
@@ -669,6 +702,7 @@ export const api = {
     if (changed) {
       Object.assign(prev, { review: 'pending', confirmed: null });
       if (prev.points != null || prev.bonus != null || db.theory.some((x) => x.set_id === prev.id)) awardSet(prev);
+      waitingVideo(prev, d.plan);
     }
     return clone(prev);
   },
@@ -694,6 +728,27 @@ export const api = {
     const l = db.logs.find((x) => x.id === id) ?? fail('Подход не найден');
     if (decision === 'corrected' && (confirmed === null || confirmed === undefined)) fail('Укажи подтверждённое число');
     review(l, decision, confirmed, comment);
+    return clone(l);
+  },
+
+  // ── Видео из Telegram ──
+  async videoSettings() { return { on: db.settings.video_auto, bot_sees: db.settings.bot_sees }; },
+  async setVideoAuto(on) { needAdmin(); db.settings.video_auto = on; },
+  // Видео, к которым друг ещё не вписал повторы.
+  async waitingVideos(a, date) { return clone(db.videos.filter((v) => v.athlete_id === a && v.date === date)); },
+  // Подходы, которые бот подтвердил по видео (сегодня и вчера) — админ может отменить.
+  async videoConfirmed() {
+    needAdmin();
+    const from = addDays(today(), -1);
+    return clone(db.logs.filter((l) => l.auto && l.date >= from)
+      .sort((a, b) => b.date.localeCompare(a.date) || a.id - b.id));
+  },
+  async undoVideo(id) {
+    needAdmin();
+    const l = db.logs.find((x) => x.id === id && x.auto) ?? fail('Подход не найден');
+    Object.assign(l, { review: 'pending', confirmed: null, auto: false });
+    awardSet(l);
+    settle(l.athlete_id);
     return clone(l);
   },
 

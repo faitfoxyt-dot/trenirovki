@@ -70,6 +70,17 @@ export function caption(date, exerciseName, setNo) {
   return `${shortDate(date)} · ${exerciseName} · подход ${setNo}`;
 }
 
+// Номер подхода за день: подходы всех упражнений плана подряд, 1…N. Его друг пишет в подписи видео.
+export function setNumber(plan, exerciseId, setNo) {
+  let n = 0;
+  for (const ex of plan ?? []) {
+    if (ex.id === exerciseId) return setNo <= ex.sets ? n + setNo : null;
+    n += ex.sets;
+  }
+  return null;
+}
+export const videoCaption = (no, name) => `#${no} ${name}`;
+
 // Единица упражнения: 'reps' — повторы, 'sec' — секунды (планка и т.п.).
 // Берём из каталога (там правда), иначе из снимка плана, иначе повторы.
 export function unitOf(ex, catalog) {
@@ -119,6 +130,7 @@ export function reviewNote(log, unit = 'reps') {
   if (log.review === 'pending') return 'На проверке';
   const pts = setPoints(log);
   const tail = pts === null ? '' : ` · ${signed(pts)}${multTag(log.mult)}`;
+  if (log.review === 'accepted' && log.auto) return `Подтверждено по видео: ${amount(log.confirmed, unit)}${tail}`;
   if (log.review === 'accepted') return `Принято: ${amount(log.confirmed, unit)}${tail}`;
   if (log.review === 'corrected') return `Исправлено: ${amount(log.confirmed, unit)}${tail}`;
   return 'Отклонено';
