@@ -23,9 +23,10 @@ const CLEAR = [
 
 export async function render(el, ctx, args, alive) {
   const { api, clock, settings, me } = ctx;
-  const [template, exercises, complexes, schedule] = await Promise.all([
+  const [template, exercises, complexes, schedule, video] = await Promise.all([
     api.weekTemplate(), api.exercises(), api.complexes(),
     ctx.athleteId ? api.complexSchedule(ctx.athleteId, clock.today, addDays(clock.today, 27)) : [],
+    api.videoSettings ? api.videoSettings() : null,
   ]);
   if (!alive()) return;
 
@@ -47,6 +48,8 @@ export async function render(el, ctx, args, alive) {
       <p class="sub">Что друг делает каждый день</p>
       <h1 class="h1">План</h1>
     </header>
+
+    ${video ? videoCard(video) : ''}
 
     <section class="card">
       <h2 class="h2">Старт</h2>
@@ -220,6 +223,13 @@ export async function render(el, ctx, args, alive) {
       <div class="chips">${trainingDays.slice(0, 8).map((d, k) => html`<span class="chip ${(next + k) % cx.length === cur ? 'chip-on' : ''}">${dayShort(d)} · ${cxLetter((next + k) % cx.length)}</span>`)}</div>`);
   };
   draw();
+
+  el.querySelector('#video-auto')?.addEventListener('change', async (e) => {
+    try {
+      await api.setVideoAuto(e.target.checked);
+      ctx.toast(e.target.checked ? 'Подтверждение по видео включено' : 'Подтверждение по видео выключено');
+    } catch (err) { e.target.checked = !e.target.checked; ctx.toast(err.message); }
+  });
 
   el.querySelector('#cx-choice').addEventListener('change', async (e) => {
     try {
@@ -444,4 +454,29 @@ function dayEditor(old, ctx, date, row, exercises, general, letter) {
       } catch (x) { err.textContent = x.message; }
     }
   });
+}
+
+// Видео из Telegram: подход с видео, где в подписи его номер (#5), бот подтверждает сам.
+function videoCard(v) {
+  return html`<section class="card video-set">
+    <h2 class="h2">📹 Подтверждение по видео</h2>
+    <label class="row switch-row"><span>Бот сам засчитывает подход с видео</span>
+      <input type="checkbox" class="switch" id="video-auto" ${v.on ? html`checked` : ''}></label>
+    <div class="vid-format">
+      <p class="label">Подпись к видео</p>
+      <p class="vid-format-big">#5 <span class="label">или</span> #5 Приседания</p>
+      <p class="label">Номер подхода за день — друг видит его слева у каждого подхода. Бот смотрит только на номер,
+        название можно не писать. Видео до 03:00 идут во вчерашний день.</p>
+    </div>
+    ${v.bot_sees ? html`<p class="ok">✅ Бот видит видео в группе</p>` : html`<div class="warn-box vid-steps">
+      <p class="warn-strong">⚠️ Бот пока не видит видео в группе</p>
+      <p>Один раз, с телефона:</p>
+      <ol>
+        <li>Открой группу → нажми на её название → <b>Изменить</b> (карандаш).</li>
+        <li><b>Администраторы</b> → <b>Добавить администратора</b> → выбери бота.</li>
+        <li>Права можно все выключить → <b>Сохранить</b>.</li>
+      </ol>
+      <p class="label">Как только бот увидит первое видео, здесь будет ✅.</p>
+    </div>`}
+  </section>`;
 }

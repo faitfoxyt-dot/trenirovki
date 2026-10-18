@@ -2,7 +2,7 @@
 // отклонить, комментарий. Очки за подход база считает в момент решения.
 
 import { html, dayTitle } from '../util.js';
-import { MUSCLES, caption, setPoints, signed, multTag, amount, unitOf, unitText, ALLIN, swapItems } from '../logic.js';
+import { MUSCLES, caption, setPoints, signed, multTag, amount, unitOf, unitText, ALLIN, swapItems, setNumber } from '../logic.js';
 
 const DECISIONS = [
   { key: 'accepted', label: 'Принять' },
@@ -23,15 +23,23 @@ function pointsTail(l) {
 
 export async function render(el, ctx, args, alive) {
   const { api, clock } = ctx;
-  const [pending, exercises, mornings, sick, ideas, swaps] = await Promise.all([
+  const [pending, exercises, mornings, sick, ideas, swaps, byVideo] = await Promise.all([
     api.pendingLogs(),
     api.exercises(),
     ctx.athleteId ? api.mornings(ctx.athleteId, clock.today, clock.today) : [],
     api.pendingSick(),
     ctx.athleteId ? api.ideas(ctx.athleteId) : [],
     api.pendingSwaps(),
+    api.videoConfirmed ? api.videoConfirmed() : [],
   ]);
   if (!alive()) return;
+  // Номер подхода за день (#1…) — по плану дня, как его видел друг.
+  const plans = new Map();
+  await Promise.all([...new Set([...byVideo, ...pending].map((l) => `${l.athlete_id}|${l.date}`))].map(async (k) => {
+    const [a, d] = k.split('|');
+    plans.set(k, (await api.days(a, d, d))[0]?.plan);
+  }));
+  [...byVideo, ...pending].forEach((l) => { l.no = setNumber(plans.get(`${l.athlete_id}|${l.date}`), l.exercise_id, l.set_no); });
   // Что заменится по каждому запросу — по плану дня, как в базе.
   await Promise.all(swaps.map(async (s) => {
     const [days, logs] = await Promise.all([api.days(s.athlete_id, s.date, s.date), api.logs(s.athlete_id, s.date, s.date)]);
@@ -103,11 +111,25 @@ export async function render(el, ctx, args, alive) {
     </div>
     ${g.logs.map((l) => html`<section class="card review-card" data-id="${l.id}" data-group="${g.key}" data-unit="${exUnit(l.exercise_id)}">
       <h2 class="h2">${exName(l.exercise_id)} · подход ${l.set_no}</h2>
-      <p class="label">Заявлено: <b class="em">${amount(l.claimed, exUnit(l.exercise_id))}</b> · видео ${l.has_video ? 'есть' : html`<span class="bad">нет</span>`}<br>
-        Подпись в Telegram: ${caption(l.date, exName(l.exercise_id), l.set_no)}</p>
+      <p class="label">Заявлено: <b class="em">${amount(l.claimed, exUnit(l.exercise_id))}</b> · видео ${l.video_url
+        ? html`<a href="${l.video_url}" target="_blank" rel="noopener">▶ смотреть</a>` : l.has_video ? 'есть' : html`<span class="bad">нет</span>`}<br>
+        Подпись в Telegram: ${l.no ? `#${l.no}` : caption(l.date, exName(l.exercise_id), l.set_no)}</p>
       <div class="review-form">${formHtml(l, null, exUnit(l.exercise_id))}</div>
     </section>`)}`) : html`<section class="card"><h2 class="h2">Всё проверено</h2>
       <p class="label">Новые подходы появятся здесь, как только друг их отметит.</p></section>`}
+    ${byVideo.length ? html`<div class="row day-head">
+      <h2 class="h2">🫡 Подтверждено по видео</h2><span class="chip chip-on">${byVideo.length}</span></div>
+      <p class="label vid-help">Бот засчитал сам: номер в подписи совпал с подходом. Не согласен — «Отменить»:
+        подход вернётся на проверку, очки снимутся.</p>
+      ${byVideo.map((l) => html`<section class="card video-card" data-vid="${l.id}" data-unit="${exUnit(l.exercise_id)}">
+        <div class="row"><h2 class="h2">${exName(l.exercise_id)} · подход ${l.set_no}</h2><span class="vid-no">#${l.no ?? '?'}</span></div>
+        <p class="label">${l.date === clock.today ? 'Сегодня' : dayTitle(l.date)}${many ? ` · ${athleteName(l.athlete_id)}` : ''}<br>
+          Засчитано: <b class="em">${amount(l.confirmed, exUnit(l.exercise_id))}</b>${pointsTail(l)}</p>
+        <div class="row-gap">
+          ${l.video_url ? html`<a class="ghost link vid-link" href="${l.video_url}" target="_blank" rel="noopener">▶ Видео</a>` : ''}
+          <button type="button" class="ghost ghost-bad vid-undo">Отменить</button>
+        </div>
+      </section>`)}` : ''}
     <section class="card">
       <h2 class="h2">Утро друга</h2>
       <p class="label">${morning
@@ -146,6 +168,26 @@ export async function render(el, ctx, args, alive) {
       left += delta;
       el.querySelector('#pending-count').textContent = `Ждут проверки: ${left}`;
     }) };
+  });
+
+  // Отмена подтверждения по видео: подход снова ждёт решения — та же форма, что у обычной проверки.
+  el.querySelectorAll('.video-card').forEach((card) => {
+    card.querySelector('.vid-undo').addEventListener('click', async () => {
+      try {
+        const log = await api.undoVideo(Number(card.dataset.vid));
+        left += 1;
+        el.querySelector('#pending-count').textContent = `Ждут проверки: ${left}`;
+        card.classList.replace('video-card', 'review-card');
+        card.innerHTML = String(html`<h2 class="h2">${exName(log.exercise_id)} · подход ${log.set_no}</h2>
+          <p class="label"><span class="warn">Подтверждение по видео отменено.</span> Заявлено: <b class="em">${amount(log.claimed, card.dataset.unit)}</b>
+            ${log.video_url ? html` · <a href="${log.video_url}" target="_blank" rel="noopener">▶ видео</a>` : ''}</p>
+          <div class="review-form">${formHtml(log, null, card.dataset.unit)}</div>`);
+        wire(card, log, ctx, (delta) => {
+          left += delta;
+          el.querySelector('#pending-count').textContent = `Ждут проверки: ${left}`;
+        });
+      } catch (e) { ctx.toast(e.message); }
+    });
   });
 
   el.querySelectorAll('[data-accept-day]').forEach((b) => b.addEventListener('click', async () => {

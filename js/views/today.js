@@ -3,7 +3,9 @@
 
 import { html, dayTitle, addDays, shortDate, debounce } from '../util.js';
 import { MUSCLES, DAY_STATUS, caption, goalText, reviewNote, dayMode, isCalibration, unitOf, unitText,
-  ALLIN, ALLIN_STATE, signed, swapItems, pickLocked } from '../logic.js';
+  ALLIN, ALLIN_STATE, signed, swapItems, pickLocked, videoCaption } from '../logic.js';
+
+const BANNER_KEY = 'video-banner-1'; // «Понятно» на плашке про видео — помним в браузере
 
 export async function render(el, ctx, args, alive) {
   const { api, clock, settings, me } = ctx;
@@ -21,7 +23,7 @@ export async function render(el, ctx, args, alive) {
     return;
   }
 
-  const [day, logs, mornings, sick, wallet, catalog, allin, weighed, swaps] = await Promise.all([
+  const [day, logs, mornings, sick, wallet, catalog, allin, weighed, swaps, video, waiting] = await Promise.all([
     api.openDay(date, isAdmin ? athleteId : undefined),
     api.logs(athleteId, date, date),
     api.mornings(athleteId, date, date),
@@ -31,6 +33,8 @@ export async function render(el, ctx, args, alive) {
     api.allinDay(date, isAdmin ? athleteId : undefined),
     !isAdmin && date === clock.today ? api.body(athleteId, date, date) : [],
     date === clock.today ? api.swapRequests(athleteId, date) : [],
+    api.videoSettings ? api.videoSettings() : { on: false },
+    api.waitingVideos ? api.waitingVideos(athleteId, date) : [],
   ]);
   if (!alive()) return;
 
@@ -43,7 +47,12 @@ export async function render(el, ctx, args, alive) {
     training: status === 'training',
     swap: swaps.find((s) => s.date === date) ?? null,
     firstPick: day?.plan?.findIndex((x) => x.pick && x.chosen === null) ?? -1, // подсказка про выбор — один раз
+    video: video.on,
+    waiting: new Set(waiting.map((v) => v.no)), // номера видео, к которым ещё нет повторов
   };
+  // Номер первого подхода каждого упражнения: подходы дня идут подряд — #1, #2, …
+  const bases = [];
+  (day?.plan ?? []).reduce((n, ex) => { bases.push(n); return n + ex.sets; }, 0);
   const isToday = date === clock.today;
   const beforeStart = settings.start_date && date < settings.start_date;
   const yesterday = addDays(clock.today, -1);
@@ -62,6 +71,8 @@ export async function render(el, ctx, args, alive) {
       </div>
     </header>
 
+    ${video.on && !isAdmin && isToday && status === 'training' && !beforeStart ? videoBanner(seenBanner(), day.plan) : ''}
+
     ${allin && status === 'training' && !beforeStart ? allinCard(allin, isToday) : ''}
 
     ${!isAdmin && isToday && clock.grace ? html`<a class="notice" href="#/day/${yesterday}">
@@ -77,8 +88,8 @@ export async function render(el, ctx, args, alive) {
     ${status === 'training' && day.plan && !beforeStart && isToday ? html`<section class="card swap-card" id="swap" hidden></section>` : ''}
 
     ${status === 'training' && day.plan && !beforeStart
-      ? day.plan.map((ex, i) => (ex.pick ? pickCard(ex, i, day.plan.length, date, state, editable, mode, catalog, allin, logs, isAdmin)
-        : exerciseCard(ex, date, state, editable, mode, catalog, allin)))
+      ? day.plan.map((ex, i) => (ex.pick ? pickCard(ex, i, day.plan.length, date, state, editable, mode, catalog, allin, logs, isAdmin, bases[i])
+        : exerciseCard(ex, date, state, editable, mode, catalog, allin, '', bases[i])))
       : html`<section class="card">
           <h2 class="h2">${status ? DAY_STATUS[status] : 'План не задан'}</h2>
           <p class="label">${restText(status, beforeStart)}</p>
@@ -97,6 +108,11 @@ export async function render(el, ctx, args, alive) {
   const morningEl = el.querySelector('#morning');
   if (morningEl) renderMorning(morningEl, ctx, state, !isAdmin && isToday);
 
+  el.querySelector('[data-news]')?.addEventListener('click', (e) => {
+    try { localStorage.setItem(BANNER_KEY, e.currentTarget.dataset.news === 'ok' ? '1' : '0'); } catch { /* без памяти — покажем снова */ }
+    ctx.refresh();
+  });
+
   if (editable) wireSets(el, ctx, date, state, mode);
   wireCopy(el);
   if (!isAdmin && mode === 'open') {
@@ -110,7 +126,7 @@ export async function render(el, ctx, args, alive) {
 }
 
 // Пробный «Выбор»: два варианта на одном месте, друг берёт один. Пока не выбрал — подходы скрыты.
-function pickCard(ex, i, total, date, state, editable, mode, catalog, allin, logs, isAdmin) {
+function pickCard(ex, i, total, date, state, editable, mode, catalog, allin, logs, isAdmin, base) {
   const locked = pickLocked(ex, logs);
   const can = !isAdmin && mode === 'open' && !locked;
   const tiles = html`<div class="pick-grid">${ex.pick.map((o, k) => {
@@ -134,7 +150,7 @@ function pickCard(ex, i, total, date, state, editable, mode, catalog, allin, log
   const head = locked || !can
     ? html`<p class="swap-from">🎯 Выбор · второй вариант был «${other.name}»</p>`
     : html`<div class="stack-4"><p class="swap-from">🎯 Упражнение ${i + 1} из ${total} · можно поменять до первого подхода</p>${tiles}</div>`;
-  return exerciseCard(ex, date, state, editable, mode, catalog, allin, head);
+  return exerciseCard(ex, date, state, editable, mode, catalog, allin, head, base);
 }
 
 // Серия и множитель, на который умножаются очки за сегодняшние подходы.
@@ -177,7 +193,35 @@ function allinCard(a, isToday) {
   </section>`;
 }
 
-function exerciseCard(ex, date, state, editable, mode, catalog, allin, head = '') {
+// Плашка «Новое от генерала»: видео с номером подхода подтверждает подход само.
+function seenBanner() {
+  try { return localStorage.getItem(BANNER_KEY) === '1'; } catch { return false; }
+}
+function videoBanner(seen, plan) {
+  const first = plan?.[0];
+  const ex = first ? videoCaption(1, first.name) : '#1 Приседания';
+  if (seen) {
+    return html`<button type="button" class="notice news-mini" data-news="open">
+      📹 Подпись к видео: <b>#номер подхода</b> — он слева у каждого подхода. Подробнее</button>`;
+  }
+  return html`<section class="card news-card">
+    <div class="row"><span class="news-tag">📢 Новое от генерала</span></div>
+    <h2 class="news-title">Видео теперь засчитывает подход само</h2>
+    <ol class="news-steps">
+      <li><span class="news-n">1</span><span>Сделай подход и впиши повторы.</span></li>
+      <li><span class="news-n">2</span><span>Отправь видео в группу, в тему «Видео».</span></li>
+      <li><span class="news-n">3</span><span>В подписи — <b>номер подхода</b>. Он слева у каждого подхода, кнопка
+        <span class="news-copy" aria-label="копировать">📋</span> копирует подпись: <span class="news-cap">${ex}</span></span></li>
+    </ol>
+    <div class="news-result">
+      <p><span aria-hidden="true">🫡</span> Бот поставил 🫡 под видео — подход засчитан сразу, очки начислены.</p>
+      <p class="warn"><span aria-hidden="true">⚠️</span> Нет номера или он неправильный — подход не засчитается. Бот напишет, что не так, а подпись можно исправить.</p>
+    </div>
+    <button type="button" class="btn" data-news="ok">Понятно</button>
+  </section>`;
+}
+
+function exerciseCard(ex, date, state, editable, mode, catalog, allin, head = '', base = 0) {
   const unit = unitOf(ex, catalog);
   const u = unitText(unit);
   const sets = Array.from({ length: ex.sets }, (_, i) => i + 1);
@@ -192,20 +236,27 @@ function exerciseCard(ex, date, state, editable, mode, catalog, allin, head = ''
     ${sets.map((n) => {
       const key = `${ex.id}-${n}`;
       const log = state.logs.get(key);
-      const cap = caption(date, ex.name, n);
-      return html`<div class="set" data-ex="${ex.id}" data-set="${n}" data-unit="${unit}">
+      const no = base + n;
+      const cap = state.video ? videoCaption(no, ex.name) : caption(date, ex.name, n);
+      const waits = state.video && state.waiting.has(no) && !log?.auto;
+      return html`<div class="set ${log?.auto ? 'set-auto' : ''}" data-ex="${ex.id}" data-set="${n}" data-unit="${unit}" data-no="${no}">
         <div class="set-row">
-          <span class="num" aria-hidden="true">${n}</span>
+          ${state.video ? html`<span class="num num-video" title="Номер для подписи видео">#${no}</span>`
+            : html`<span class="num" aria-hidden="true">${n}</span>`}
           <input class="input set-reps" type="number" inputmode="numeric" pattern="[0-9]*" min="0" max="1000"
             placeholder="${u.input}" aria-label="${ex.name}, подход ${n}, ${u.input}"
             value="${log?.claimed ?? ''}" ${mode !== 'open' ? html`disabled` : ''}>
-          <label class="check"><input type="checkbox" class="set-video" ${log?.has_video ? html`checked` : ''}
-            ${editable ? '' : html`disabled`}><span>Видео</span></label>
+          ${log?.auto ? html`<span class="vid-chip vid-ok" title="Бот нашёл видео с подписью #${no}">🫡 Видео</span>
+            <input type="checkbox" class="set-video" checked hidden>`
+            : waits ? html`<span class="vid-chip vid-wait">👀 Видео</span><input type="checkbox" class="set-video" checked hidden>`
+            : html`<label class="check"><input type="checkbox" class="set-video" ${log?.has_video ? html`checked` : ''}
+            ${editable ? '' : html`disabled`}><span>Видео</span></label>`}
           <button type="button" class="ghost icon set-copy" data-caption="${cap}" aria-label="Скопировать подпись: ${cap}">
             <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/></svg>
           </button>
         </div>
-        <p class="set-note" aria-live="polite">${noteHtml(log, unit)}</p>
+        <p class="set-note" aria-live="polite">${waits && log?.claimed == null
+          ? html`<span class="warn">Видео #${no} пришло. Впиши повторы — подход засчитается сам.</span>` : noteHtml(log, unit)}</p>
       </div>`;
     })}
   </section>`;
@@ -239,6 +290,12 @@ function wireSets(el, ctx, date, state, mode) {
     try {
       const saved = await ctx.api.logSet(date, exId, setNo, claimed, video);
       state.logs.set(key, saved);
+      // Видео с этим номером уже ждало — база приняла подход сразу, показываем свежий день.
+      if (state.video && state.waiting.has(Number(row.dataset.no)) && claimed !== null && prev?.claimed == null) {
+        ctx.toast(`🫡 Подход #${row.dataset.no} подтверждён по видео`);
+        ctx.refresh();
+        return;
+      }
       note.innerHTML = String(noteHtml(saved, row.dataset.unit)) || 'Сохранено';
     } catch (err) {
       note.innerHTML = '';
