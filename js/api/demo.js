@@ -563,9 +563,9 @@ function setStatus(a, date, status) {
     videoAccept(row, tgLink(412 + i));
   });
   db.videos.push({ athlete_id: a, date: T, no: 4, url: tgLink(416) });
-  // Событие понедельника (концепт): звезда на ниточке, мини-игра на ×1.5.
-  db.events.push({ athlete_id: a, date: T, title: 'Событие понедельника', game: 'a', score: null });
-  db.events.push({ athlete_id: a, date: addDays(T, -2), title: 'Событие субботы', game: 'b', score: 4 });
+  // Событие понедельника: звезда на ниточке, мини-игра «Генерал приказал» на ×1.5.
+  db.events.push({ athlete_id: a, date: T, title: 'Событие понедельника', game: 'b', score: null, done: false });
+  db.events.push({ athlete_id: a, date: addDays(T, -2), title: 'Событие субботы', game: 'b', score: 4, done: true });
   settle(a);
 }());
 
@@ -844,20 +844,21 @@ export const api = {
     needAdmin();
     if (date < today()) fail('Событие можно поставить только на сегодня или позже');
     const e = db.events.find((x) => x.athlete_id === a && x.date === date);
-    if (e && e.score !== null) fail('Атлет уже сыграл, событие не поменять');
+    if (e && e.score !== null) fail('Атлет уже начал играть, событие не поменять');
     db.events = db.events.filter((x) => x !== e);
     if (!game) return null;
-    db.events.push({ athlete_id: a, date, title: title?.trim() || 'Событие дня', game, score: null });
+    db.events.push({ athlete_id: a, date, title: title?.trim() || 'Событие дня', game, score: null, done: false });
     return this.eventDay(date, a);
   },
 
-  async playEvent(date, score) {
+  async playEvent(date, score, done) {
     needAthlete();
     const e = db.events.find((x) => x.athlete_id === current.id && x.date === date);
     if (!e || date !== today()) fail('Сегодня события нет');
-    if (e.score !== null) fail('Попытка уже была');
-    e.score = Math.max(0, Math.min(5, Math.round(score)));
-    return clone(e);
+    if (e.done) fail('Попытка уже была');
+    e.score = Math.max(e.score ?? 0, Math.min(5, Math.round(score ?? 0)));
+    e.done = Boolean(done);
+    return this.eventDay(date);
   },
 
   async allinDay(date, athleteId) {

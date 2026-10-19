@@ -1,20 +1,23 @@
 -- Трекер тренировок · v3.13: событие дня — звезда на ниточке и мини-игра.
--- Тимур в «Плане» включает событие на сегодня или завтра и выбирает игру (a, b, c).
--- У атлета на любом экране висит звезда; нажал — мини-игра из 5 ходов, попытка одна (play_event).
+-- Тимур в «Плане» включает событие на сегодня или завтра (игра 'b' — «Генерал приказал»).
+-- У атлета на любом экране висит звезда; нажал — мини-игра из 5 ходов, попытка одна:
+-- play_event сохраняет счёт после каждого хода, так что перезагрузка страницы не даёт переиграть.
 -- Каждый верный ход — +0.1 к множителю: score из 5 → очки дня × (1 + 0.1 × score), 5 из 5 — ×1.5.
 -- Множитель ложится поверх всего: очков за подходы (уже с серией) и «Всё или ничего».
 -- Бонус пишется одной строкой ledger kind 'event', когда день закончился и всё проверено,
 -- и пересчитывается, если Тимур потом поменял проверку. В тестовый период не начисляется.
--- Можно выполнять повторно.
+-- Можно выполнять повторно. Убранное событие не стирается, а помечается active = false.
 
 alter type public.ledger_kind add value if not exists 'event';
 
 create table if not exists public.day_events (
-  athlete_id uuid not null references public.profiles (id) on delete cascade,
+  athlete_id uuid not null references public.profiles (id),
   date       date not null,
   title      text not null default 'Событие дня',
-  game       text not null default 'a' check (game in ('a', 'b', 'c')),
-  score      int check (score between 0 and 5),   -- null — ещё не сыграл
+  game       text not null default 'b' check (game in ('a', 'b', 'c')),
+  active     boolean not null default true,       -- false — Тимур убрал событие
+  score      int check (score between 0 and 5),   -- null — ещё не начал; растёт после каждого хода
+  done       boolean not null default false,      -- игра закончена (или закрыта посередине)
   played_at  timestamptz,
   created_at timestamptz not null default now(),
   primary key (athlete_id, date)
@@ -38,30 +41,32 @@ declare
 begin
   if auth.uid() is null then raise exception 'Нужно войти'; end if;
   if who <> auth.uid() and not is_admin() then raise exception 'Нет доступа'; end if;
-  select * into e from day_events where athlete_id = who and date = p_date;
+  select * into e from day_events where athlete_id = who and date = p_date and active;
   if not found then return null; end if;
   return json_build_object('date', e.date, 'title', e.title, 'game', e.game, 'score', e.score,
-    'played_at', e.played_at, 'test', is_test_day(e.date),
+    'done', e.done, 'played_at', e.played_at, 'test', is_test_day(e.date),
     'bonus', (select coalesce(sum(l.rating), 0) from ledger l
               where l.athlete_id = who and l.date = e.date and l.kind = 'event'));
 end $$;
 
--- Атлет сыграл: одна попытка, только в день события.
-create or replace function public.play_event(p_date date, p_score int) returns json
+-- Ход атлета: счёт после хода (только растёт) и закончена ли игра. Одна попытка, только в день события.
+create or replace function public.play_event(p_date date, p_score int, p_done boolean) returns json
 language plpgsql security definer set search_path = public as $$
 declare
   e day_events;
 begin
   if auth.uid() is null then raise exception 'Нужно войти'; end if;
-  select * into e from day_events where athlete_id = auth.uid() and date = p_date for update;
+  select * into e from day_events where athlete_id = auth.uid() and date = p_date and active for update;
   if not found or p_date <> app_today() then raise exception 'Сегодня события нет'; end if;
-  if e.score is not null then raise exception 'Попытка уже была'; end if;
-  update day_events set score = greatest(0, least(5, coalesce(p_score, 0))), played_at = now()
+  if e.done then raise exception 'Попытка уже была'; end if;
+  update day_events
+  set score = greatest(coalesce(e.score, 0), least(5, coalesce(p_score, 0))),
+      done = coalesce(p_done, false), played_at = coalesce(e.played_at, now())
   where athlete_id = auth.uid() and date = p_date;
   return event_day(p_date);
 end $$;
 
--- Тимур включает событие (на сегодня или позже) или убирает его, пока атлет не сыграл (p_game = null).
+-- Тимур включает событие (на сегодня или позже) или убирает его, пока атлет не начал (p_game = null).
 create or replace function public.set_event(p_athlete uuid, p_date date, p_game text, p_title text default null)
 returns json
 language plpgsql security definer set search_path = public as $$
@@ -71,14 +76,15 @@ begin
   if not is_admin() then raise exception 'Только для админа'; end if;
   if p_date < app_today() then raise exception 'Событие можно поставить только на сегодня или позже'; end if;
   select * into e from day_events where athlete_id = p_athlete and date = p_date;
-  if found and e.score is not null then raise exception 'Атлет уже сыграл, событие не поменять'; end if;
+  if found and e.active and e.score is not null then raise exception 'Атлет уже начал играть, событие не поменять'; end if;
   if p_game is null then
-    delete from day_events where athlete_id = p_athlete and date = p_date;
+    update day_events set active = false where athlete_id = p_athlete and date = p_date;
     return null;
   end if;
   insert into day_events (athlete_id, date, game, title)
   values (p_athlete, p_date, p_game, coalesce(nullif(trim(p_title), ''), 'Событие дня'))
-  on conflict (athlete_id, date) do update set game = excluded.game, title = excluded.title;
+  on conflict (athlete_id, date) do update
+  set game = excluded.game, title = excluded.title, active = true, score = null, done = false, played_at = null;
   return event_day(p_date, p_athlete);
 end $$;
 
@@ -94,7 +100,7 @@ declare
   delta int;
 begin
   if is_test_day(p_date) then return; end if;
-  select * into e from day_events where athlete_id = p_athlete and date = p_date;
+  select * into e from day_events where athlete_id = p_athlete and date = p_date and active;
   if found and coalesce(e.score, 0) > 0 and p_date < app_today()
      and not exists (select 1 from set_logs s where s.athlete_id = p_athlete and s.date = p_date and s.review = 'pending') then
     select coalesce(sum(rating), 0) into base from ledger
@@ -194,5 +200,5 @@ end $$;
 
 -- ───────────── Права ─────────────
 
-grant execute on function public.event_day(date, uuid), public.play_event(date, int),
+grant execute on function public.event_day(date, uuid), public.play_event(date, int, boolean),
   public.set_event(uuid, date, text, text) to authenticated;

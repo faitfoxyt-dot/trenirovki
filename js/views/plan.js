@@ -462,9 +462,8 @@ function dayEditor(old, ctx, date, row, exercises, general, letter) {
   });
 }
 
-// Событие дня: звезда на ниточке у друга и мини-игра. Ставится на сегодня или завтра.
+// Событие дня: звезда на ниточке у друга и мини-игра «Генерал приказал». Ставится на сегодня или завтра.
 const WD_GEN = ['понедельника', 'вторника', 'среды', 'четверга', 'пятницы', 'субботы', 'воскресенья'];
-const GAME_KEYS = Object.keys(GAMES);
 
 async function renderEvent(el, ctx, today, alive, date = today) {
   const { api } = ctx;
@@ -484,14 +483,11 @@ async function renderEvent(el, ctx, today, alive, date = today) {
         ${ev.score === null
           ? html`<p class="label">${date === today ? 'Ждёт, пока друг сыграет.' : `Звезда появится у друга ${dayTitle(date)}.`}</p>
             <button type="button" class="ghost ghost-bad" id="ev-off">Убрать событие</button>`
-          : html`<p class="ok">Друг сыграл: ${ev.score} из 5 → очки дня ×${multOf(ev.score).toFixed(1)}</p>
-            ${ev.bonus ? html`<p class="label">Бонус начислен: +${ev.bonus}</p>` : html`<p class="label">Бонус начислится после проверки дня.</p>`}`}
+          : html`<p class="ok">Друг ${ev.done ? 'сыграл' : 'играет'}: ${ev.score} из 5 → очки дня ×${multOf(ev.score).toFixed(1)}</p>
+            ${ev.bonus ? html`<p class="label">Бонус начислен: +${ev.bonus}</p>`
+              : html`<p class="label">${ev.score ? 'Бонус начислится, когда день закончится и ты всё проверишь.' : 'Бонуса не будет.'}</p>`}`}
       </div>`
-    : html`<label class="label" for="ev-game">Игра</label>
-      <select id="ev-game" class="input">
-        ${GAME_KEYS.map((k, i) => html`<option value="${k}">${'АБВ'[i]}. ${GAMES[k].icon} ${GAMES[k].name}</option>`)}
-        <option value="random">🎲 Случайная</option>
-      </select>
+    : html`<p class="label">Игра: ${GAMES.b.icon} «${GAMES.b.name}» — жать упражнение, только если сказано «Генерал приказал».</p>
       <label class="label" for="ev-title">Название (друг увидит его над игрой)</label>
       <input class="input" id="ev-title" type="text" maxlength="40" value="Событие ${WD_GEN[isoDow(date) - 1]}">
       <button type="button" class="btn" id="ev-on">Запустить событие</button>`}
@@ -504,9 +500,7 @@ async function renderEvent(el, ctx, today, alive, date = today) {
   };
   el.querySelectorAll('[data-ev-date]').forEach((b) => b.addEventListener('click', () => renderEvent(el, ctx, today, alive, b.dataset.evDate)));
   el.querySelector('#ev-on')?.addEventListener('click', () => run(async () => {
-    let game = el.querySelector('#ev-game').value;
-    if (game === 'random') game = GAME_KEYS[Math.floor(Math.random() * GAME_KEYS.length)];
-    await api.setEvent(ctx.athleteId, date, game, el.querySelector('#ev-title').value);
+    await api.setEvent(ctx.athleteId, date, 'b', el.querySelector('#ev-title').value);
     ctx.toast(date === today ? 'Событие запущено ⭐' : 'Событие поставлено на завтра ⭐');
   }));
   el.querySelector('#ev-off')?.addEventListener('click', () => run(() => api.setEvent(ctx.athleteId, date, null)));

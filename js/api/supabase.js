@@ -161,7 +161,9 @@ export const api = {
     const { data, error } = await sb.rpc('event_day', { p_date: date, p_athlete: athleteId ?? null });
     return error ? null : data;
   },
-  async playEvent(date, score) { return check(await sb.rpc('play_event', { p_date: date, p_score: score })); },
+  async playEvent(date, score, done) {
+    return check(await sb.rpc('play_event', { p_date: date, p_score: score, p_done: done }));
+  },
   async setEvent(athleteId, date, game, title) {
     return check(await sb.rpc('set_event', { p_athlete: athleteId, p_date: date, p_game: game, p_title: title ?? null }));
   },
