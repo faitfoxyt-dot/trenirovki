@@ -9,8 +9,8 @@ const ROUNDS = 5;
 const STEP = 0.1;
 
 export const GAMES = {
-  b: { name: 'Генерал приказал', icon: '🫡',
-    rules: ['Жми упражнение, только если сказано «Генерал приказал».', 'Без этих слов — ничего не трогай.', 'На ответ пара секунд.'] },
+  a: { name: 'Идеальный повтор', icon: '🎯',
+    rules: ['Бегунок ползает по линейке туда-сюда.', 'Жми, когда он в зелёной зоне.', 'С каждым ходом быстрее, а зона уже.'] },
 };
 
 export const multOf = (score) => Math.round((1 + STEP * score) * 10) / 10;
@@ -39,7 +39,7 @@ export async function mountStar(ctx) {
 }
 
 function open(ctx, ev) {
-  const game = GAMES[ev.game] ? ev.game : 'b';
+  const game = 'a'; // пока игра одна
   const g = GAMES[game];
   const layer = document.createElement('div');
   layer.className = 'ev-overlay';
@@ -126,62 +126,62 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 // ── Игра: play(el, onRound(ok) → номер следующего хода, done()) → stop() ──
 
 const PLAY = {
-  // «Генерал приказал»: жми, только если приказ.
-  b(el, onRound, done) {
-    const moves = [['squat', '🦵', 'Присед'], ['push', '💪', 'Отжимания'], ['plank', '🧱', 'Планка']];
-    const times = [2600, 2300, 2000, 1800, 1600];
-    // 2 хода-ловушки из 5, на случайных местах (но не первый).
-    const traps = new Set();
-    while (traps.size < 2) traps.add(1 + Math.floor(Math.random() * 4));
-    el.innerHTML = String(html`<div class="ev-order"><p class="ev-order-who"></p><p class="ev-order-what"></p></div>
-      <div class="ev-timer"><i></i></div>
+  // «Идеальный повтор»: бегунок ползает по линейке, жми, когда он в зелёной зоне.
+  a(el, onRound, done) {
+    const zones = [30, 25, 21, 18, 15];      // ширина зоны, %
+    const periods = [2200, 1950, 1750, 1550, 1400]; // проход туда-обратно, мс
+    el.innerHTML = String(html`<p class="ev-say">Жми, когда бегунок в зелёной зоне</p>
+      <div class="ev-track"><div class="ev-zone"></div><div class="ev-marker"></div></div>
       <p class="ev-flash" aria-live="polite"></p>
-      <div class="ev-moves">${moves.map(([id, ic, name]) => html`<button type="button" class="ev-move" data-move="${id}">
-        <span class="ev-move-ic">${ic}</span>${name}</button>`)}</div>`);
-    const who = el.querySelector('.ev-order-who');
-    const what = el.querySelector('.ev-order-what');
-    const bar = el.querySelector('.ev-timer i');
+      <button type="button" class="btn ev-tap">Жми!</button>`);
+    const zone = el.querySelector('.ev-zone');
+    const marker = el.querySelector('.ev-marker');
     const flash = el.querySelector('.ev-flash');
-    const btns = [...el.querySelectorAll('.ev-move')];
+    const btn = el.querySelector('.ev-tap');
     let k = 0;
+    let raf = 0;
+    let t0 = 0;
+    let pos = 0;
+    let z = { from: 0, to: 0 };
     let live = true;
-    let timer = 0;
-    let cur = null;
+    let busy = false;
     const setup = () => {
-      const [id, , name] = moves[Math.floor(Math.random() * moves.length)];
-      cur = { id, trap: traps.has(k) };
-      who.textContent = cur.trap ? '' : 'Генерал приказал:';
-      what.textContent = `${name}!`;
-      el.querySelector('.ev-order').className = 'ev-order ev-order-in';
+      const w = zones[k];
+      const from = 8 + Math.random() * (84 - w);
+      z = { from, to: from + w };
+      zone.style.left = `${from}%`;
+      zone.style.width = `${w}%`;
+      t0 = performance.now() + Math.random() * 400;
+      busy = false;
+      btn.disabled = false;
       flash.textContent = `Ход ${k + 1} из ${ROUNDS}`;
       flash.className = 'ev-flash';
-      btns.forEach((b) => { b.disabled = false; b.className = 'ev-move'; });
-      bar.style.transition = 'none';
-      bar.style.width = '100%';
-      void bar.offsetWidth;
-      bar.style.transition = `width ${times[k]}ms linear`;
-      bar.style.width = '0%';
-      timer = setTimeout(() => answer(null), times[k]);
+      raf = requestAnimationFrame(tick);
     };
-    const answer = async (pick) => {
-      if (!cur) return;
-      clearTimeout(timer);
-      const ok = cur.trap ? pick === null : pick === cur.id;
-      const msg = ok ? (cur.trap ? 'Не повёлся! +0.1x' : 'Есть! +0.1x')
-        : cur.trap ? 'Генерал не приказывал!' : pick === null ? 'Не успел' : 'Не то упражнение';
-      bar.style.transition = 'none';
-      bar.style.width = getComputedStyle(bar).width;
-      btns.forEach((b) => { b.disabled = true; if (b.dataset.move === pick) b.classList.add(ok ? 'ev-move-ok' : 'ev-move-no'); });
-      flash.textContent = msg;
+    const tick = (now) => {
+      const p = (((now - t0) / periods[k]) % 1 + 1) % 1;
+      pos = (p < 0.5 ? p * 2 : 2 - p * 2) * 100;
+      marker.style.left = `${pos}%`;
+      if (live) raf = requestAnimationFrame(tick);
+    };
+    const hit = async () => {
+      if (busy) return;
+      busy = true;
+      btn.disabled = true;
+      cancelAnimationFrame(raf);
+      const ok = pos >= z.from && pos <= z.to;
+      el.querySelector('.ev-track').classList.add(ok ? 'ev-good' : 'ev-bad');
+      flash.textContent = ok ? 'Чётко! +0.1x' : 'Мимо';
       flash.className = `ev-flash ${ok ? 'ev-ok' : 'ev-no'}`;
-      cur = null;
       k = onRound(ok);
-      await wait(900);
+      await wait(800);
+      el.querySelector('.ev-track')?.classList.remove('ev-good', 'ev-bad');
       if (!live) return;
       if (k >= ROUNDS) done(); else setup();
     };
-    btns.forEach((b) => b.addEventListener('click', () => answer(b.dataset.move)));
+    btn.addEventListener('click', hit);
+    el.querySelector('.ev-track').addEventListener('pointerdown', hit);
     setup();
-    return () => { live = false; clearTimeout(timer); };
+    return () => { live = false; cancelAnimationFrame(raf); };
   },
 };

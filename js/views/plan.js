@@ -462,7 +462,7 @@ function dayEditor(old, ctx, date, row, exercises, general, letter) {
   });
 }
 
-// Событие дня: звезда на ниточке у друга и мини-игра «Генерал приказал». Ставится на сегодня или завтра.
+// Событие дня: звезда на ниточке у друга и мини-игра «Идеальный повтор». Ставится на сегодня или завтра.
 const WD_GEN = ['понедельника', 'вторника', 'среды', 'четверга', 'пятницы', 'субботы', 'воскресенья'];
 
 async function renderEvent(el, ctx, today, alive, date = today) {
@@ -487,7 +487,7 @@ async function renderEvent(el, ctx, today, alive, date = today) {
             ${ev.bonus ? html`<p class="label">Бонус начислен: +${ev.bonus}</p>`
               : html`<p class="label">${ev.score ? 'Бонус начислится, когда день закончится и ты всё проверишь.' : 'Бонуса не будет.'}</p>`}`}
       </div>`
-    : html`<p class="label">Игра: ${GAMES.b.icon} «${GAMES.b.name}» — жать упражнение, только если сказано «Генерал приказал».</p>
+    : html`<p class="label">Игра: ${GAMES.a.icon} «${GAMES.a.name}» — бегунок ползает по линейке, жать, когда он в зелёной зоне.</p>
       <label class="label" for="ev-title">Название (друг увидит его над игрой)</label>
       <input class="input" id="ev-title" type="text" maxlength="40" value="Событие ${WD_GEN[isoDow(date) - 1]}">
       <button type="button" class="btn" id="ev-on">Запустить событие</button>`}
@@ -500,7 +500,7 @@ async function renderEvent(el, ctx, today, alive, date = today) {
   };
   el.querySelectorAll('[data-ev-date]').forEach((b) => b.addEventListener('click', () => renderEvent(el, ctx, today, alive, b.dataset.evDate)));
   el.querySelector('#ev-on')?.addEventListener('click', () => run(async () => {
-    await api.setEvent(ctx.athleteId, date, 'b', el.querySelector('#ev-title').value);
+    await api.setEvent(ctx.athleteId, date, 'a', el.querySelector('#ev-title').value);
     ctx.toast(date === today ? 'Событие запущено ⭐' : 'Событие поставлено на завтра ⭐');
   }));
   el.querySelector('#ev-off')?.addEventListener('click', () => run(() => api.setEvent(ctx.athleteId, date, null)));
