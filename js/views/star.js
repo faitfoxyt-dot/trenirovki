@@ -43,7 +43,7 @@ export async function mountStar(ctx) {
 }
 
 function open(ctx, ev) {
-  const key = new URLSearchParams(location.search).get('game') ?? ev.game; // в демо игру можно выбрать в адресе
+  const key = (ctx.demo && new URLSearchParams(location.search).get('game')) || ev.game; // в демо игру можно выбрать в адресе
   const game = GAMES[key] ? key : 'a';
   const g = GAMES[game];
   const layer = document.createElement('div');

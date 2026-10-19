@@ -2,6 +2,7 @@
 
 import { html, WEEKDAYS, WD_SHORT, dayTitle, addDays, isoDow, shortDate } from '../util.js';
 import { DAY_STATUS, unitOf, unitText, cxLetter, CX_LETTERS } from '../logic.js';
+import { GAMES, multOf } from './star.js';
 
 const TEMPLATE_OPTIONS = [
   { value: '', label: 'Не задано' },
@@ -48,6 +49,8 @@ export async function render(el, ctx, args, alive) {
       <p class="sub">Что друг делает каждый день</p>
       <h1 class="h1">План</h1>
     </header>
+
+    ${ctx.athleteId && api.setEvent ? html`<section class="card event-set" id="ev-card"></section>` : ''}
 
     ${video ? videoCard(video) : ''}
 
@@ -136,6 +139,9 @@ export async function render(el, ctx, args, alive) {
       <button type="button" class="ghost" id="sign-out">Выйти</button></div>
     </section>
   `);
+
+  const evEl = el.querySelector('#ev-card');
+  if (evEl) renderEvent(evEl, ctx, clock.today, alive);
 
   // Старт
   const savedNote = el.querySelector('#settings-saved');
@@ -454,6 +460,56 @@ function dayEditor(old, ctx, date, row, exercises, general, letter) {
       } catch (x) { err.textContent = x.message; }
     }
   });
+}
+
+// Событие дня: звезда на ниточке у друга и мини-игра. Ставится на сегодня или завтра.
+const WD_GEN = ['понедельника', 'вторника', 'среды', 'четверга', 'пятницы', 'субботы', 'воскресенья'];
+const GAME_KEYS = Object.keys(GAMES);
+
+async function renderEvent(el, ctx, today, alive, date = today) {
+  const { api } = ctx;
+  const ev = await api.eventDay(date, ctx.athleteId);
+  if (!alive()) return;
+  const when = (d, label) => html`<button type="button" class="pill ${d === date ? 'pill-on' : ''}" data-ev-date="${d}">${label}</button>`;
+  const g = ev && GAMES[ev.game];
+  el.innerHTML = String(html`
+    <h2 class="h2">⭐ Событие дня</h2>
+    <p class="label">У друга на всех экранах повиснет звезда на ниточке. Нажмёт — мини-игра из 5 ходов:
+      каждый верный ход даёт +0.1x к очкам дня, 5 из 5 — ×1.5. Попытка одна.
+      Бонус ложится поверх серии и «Всё или ничего», начислится, когда день закончится и ты всё проверишь.</p>
+    <div class="seg" role="group" aria-label="День события">${when(today, 'Сегодня')}${when(addDays(today, 1), 'Завтра')}</div>
+    ${ev ? html`<div class="ev-state">
+        <p class="em">${ev.title}</p>
+        <p class="label">Игра: ${g ? `${g.icon} ${g.name}` : ev.game}</p>
+        ${ev.score === null
+          ? html`<p class="label">${date === today ? 'Ждёт, пока друг сыграет.' : `Звезда появится у друга ${dayTitle(date)}.`}</p>
+            <button type="button" class="ghost ghost-bad" id="ev-off">Убрать событие</button>`
+          : html`<p class="ok">Друг сыграл: ${ev.score} из 5 → очки дня ×${multOf(ev.score).toFixed(1)}</p>
+            ${ev.bonus ? html`<p class="label">Бонус начислен: +${ev.bonus}</p>` : html`<p class="label">Бонус начислится после проверки дня.</p>`}`}
+      </div>`
+    : html`<label class="label" for="ev-game">Игра</label>
+      <select id="ev-game" class="input">
+        ${GAME_KEYS.map((k, i) => html`<option value="${k}">${'АБВ'[i]}. ${GAMES[k].icon} ${GAMES[k].name}</option>`)}
+        <option value="random">🎲 Случайная</option>
+      </select>
+      <label class="label" for="ev-title">Название (друг увидит его над игрой)</label>
+      <input class="input" id="ev-title" type="text" maxlength="40" value="Событие ${WD_GEN[isoDow(date) - 1]}">
+      <button type="button" class="btn" id="ev-on">Запустить событие</button>`}
+    <p class="error" id="ev-error" role="alert"></p>`);
+
+  const err = el.querySelector('#ev-error');
+  const run = async (fn) => {
+    err.textContent = '';
+    try { await fn(); renderEvent(el, ctx, today, alive, date); } catch (e) { err.textContent = e.message; }
+  };
+  el.querySelectorAll('[data-ev-date]').forEach((b) => b.addEventListener('click', () => renderEvent(el, ctx, today, alive, b.dataset.evDate)));
+  el.querySelector('#ev-on')?.addEventListener('click', () => run(async () => {
+    let game = el.querySelector('#ev-game').value;
+    if (game === 'random') game = GAME_KEYS[Math.floor(Math.random() * GAME_KEYS.length)];
+    await api.setEvent(ctx.athleteId, date, game, el.querySelector('#ev-title').value);
+    ctx.toast(date === today ? 'Событие запущено ⭐' : 'Событие поставлено на завтра ⭐');
+  }));
+  el.querySelector('#ev-off')?.addEventListener('click', () => run(() => api.setEvent(ctx.athleteId, date, null)));
 }
 
 // Видео из Telegram: подход с видео, где в подписи его номер (#5), бот подтверждает сам.

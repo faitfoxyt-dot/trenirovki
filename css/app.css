@@ -760,3 +760,6 @@ i.cx-h { width: 12px; height: 12px; display: inline-block; border-radius: 3px; }
 @media (prefers-reduced-motion: reduce) {
   .ev-swing, .ev-star-ic { animation: none; }
 }
+.event-set { border-color: rgba(255, 213, 74, .45); }
+.ev-state { display: flex; flex-direction: column; gap: 6px; padding: 12px; border-radius: 12px; background: var(--bar); }
+.ev-state p { margin: 0; }
