@@ -10,6 +10,7 @@ import * as goal from './views/goal.js';
 import * as shop from './views/shop.js';
 import * as rules from './views/rules.js';
 import * as body from './views/body.js';
+import { mountStar } from './views/star.js';
 
 const DEMO = new URLSearchParams(location.search).has('demo');
 const { api } = DEMO ? await import('./api/demo.js') : await import('./api/supabase.js');
@@ -148,6 +149,7 @@ async function route() {
     [ctx.clock, ctx.settings, ctx.rules] = await Promise.all([api.clock(), api.settings(), api.rules()]);
     if (my !== routeSeq) return;
     await view.render(el, ctx, args, () => my === routeSeq);
+    if (my === routeSeq) mountStar(ctx).catch(() => {});
   } catch (err) {
     if (my !== routeSeq) return;
     el.innerHTML = String(html`<section class="card"><h2 class="h2">Не получилось загрузить</h2>

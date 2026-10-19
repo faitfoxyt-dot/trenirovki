@@ -64,6 +64,7 @@ const db = {
   ideas: [],
   theory: [],
   body: [],
+  events: [], // события дня: {athlete_id, date, title, game, score} — score null, пока не сыграл
   videos: [], // видео из Telegram, к которым ещё нет повторов: {athlete_id, date, no, url}
 };
 let current = ATHLETE;
@@ -544,6 +545,8 @@ function setStatus(a, date, status) {
     videoAccept(row, tgLink(412 + i));
   });
   db.videos.push({ athlete_id: a, date: T, no: 4, url: tgLink(416) });
+  // Событие понедельника (концепт): звезда на ниточке, мини-игра на ×1.5.
+  db.events.push({ athlete_id: a, date: T, title: 'Событие понедельника', game: 'a', score: null });
   settle(a);
 }());
 
@@ -807,6 +810,21 @@ export const api = {
   async buyAllin(date) {
     needAthlete();
     return clone(buyAllin(current.id, date));
+  },
+
+  async eventDay(date, athleteId) {
+    const a = athleteId ?? current.id;
+    if (a !== current.id) needAdmin();
+    return clone(db.events.find((e) => e.athlete_id === a && e.date === date) ?? null);
+  },
+
+  async playEvent(date, score) {
+    needAthlete();
+    const e = db.events.find((x) => x.athlete_id === current.id && x.date === date);
+    if (!e || date !== today()) fail('Сегодня события нет');
+    if (e.score !== null) fail('Попытка уже была');
+    e.score = Math.max(0, Math.min(5, Math.round(score)));
+    return clone(e);
   },
 
   async allinDay(date, athleteId) {

@@ -23,7 +23,7 @@ export async function render(el, ctx, args, alive) {
     return;
   }
 
-  const [day, logs, mornings, sick, wallet, catalog, allin, weighed, swaps, video, waiting] = await Promise.all([
+  const [day, logs, mornings, sick, wallet, catalog, allin, weighed, swaps, video, waiting, event] = await Promise.all([
     api.openDay(date, isAdmin ? athleteId : undefined),
     api.logs(athleteId, date, date),
     api.mornings(athleteId, date, date),
@@ -35,6 +35,7 @@ export async function render(el, ctx, args, alive) {
     date === clock.today ? api.swapRequests(athleteId, date) : [],
     api.videoSettings ? api.videoSettings() : { on: false },
     api.waitingVideos ? api.waitingVideos(athleteId, date) : [],
+    api.eventDay ? api.eventDay(date, isAdmin ? athleteId : undefined) : null,
   ]);
   if (!alive()) return;
 
@@ -68,6 +69,7 @@ export async function render(el, ctx, args, alive) {
         ${wallet && !beforeStart ? streakChip(wallet, ctx.rules?.current) : ''}
         ${beforeStart ? html`<span class="chip chip-warn">Старт ${shortDate(settings.start_date)}</span>` : ''}
         ${allin && status === 'training' ? html`<span class="chip chip-allin">🎲 ALL IN</span>` : ''}
+        ${event?.score > 0 ? html`<span class="chip chip-event">⭐ Событие · очки ×${(1 + event.score / 10).toFixed(1)}</span>` : ''}
       </div>
     </header>
 
