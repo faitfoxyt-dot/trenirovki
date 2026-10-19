@@ -563,8 +563,8 @@ function setStatus(a, date, status) {
     videoAccept(row, tgLink(412 + i));
   });
   db.videos.push({ athlete_id: a, date: T, no: 4, url: tgLink(416) });
-  // Событие понедельника: звезда на ниточке, мини-игра «Генерал приказал» на ×1.5.
-  db.events.push({ athlete_id: a, date: T, title: 'Событие понедельника', game: 'b', score: null, done: false });
+  // Событие понедельника: звезда на ниточке, мини-игра «Идеальный повтор» на ×1.5.
+  db.events.push({ athlete_id: a, date: T, title: 'Событие понедельника', game: 'a', score: null, done: false });
   db.events.push({ athlete_id: a, date: addDays(T, -2), title: 'Событие субботы', game: 'b', score: 4, done: true });
   settle(a);
 }());
