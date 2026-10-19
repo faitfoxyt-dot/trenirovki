@@ -27,6 +27,7 @@
   --accent-hover: #E2FF7A;
   --warn: #FFB547;
   --bad: #FF8A3D;
+  --gold: #FFD54A;
   --tabbar-h: 60px;
   color-scheme: dark;
 }
@@ -645,3 +646,92 @@ i.cx-h { width: 12px; height: 12px; display: inline-block; border-radius: 3px; }
 .vid-steps { display: flex; flex-direction: column; gap: 6px; border-color: var(--warn); }
 .vid-steps .warn-strong { color: var(--warn); }
 .vid-steps ol { margin: 0; padding-left: 20px; font-size: 14px; display: flex; flex-direction: column; gap: 4px; }
+
+/* Событие дня: звезда на ниточке и мини-игра */
+.chip-event { background: transparent; border: 1px solid var(--gold); color: var(--gold); font-weight: 600; }
+.ev-star {
+  position: fixed; top: 0; right: max(10px, calc(50% - 250px)); z-index: 30;
+  width: 48px; height: 100px; padding: 0; border: 0; background: none; cursor: pointer;
+}
+.ev-swing {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+  transform-origin: 50% 0; animation: ev-swing 3.2s ease-in-out infinite alternate;
+}
+.ev-thread { width: 1.5px; flex: 1; background: linear-gradient(var(--line-2), var(--dim)); }
+.ev-star-ic {
+  width: 38px; height: 38px; flex: none; margin-top: -3px; fill: var(--gold);
+  filter: drop-shadow(0 0 6px rgba(255, 213, 74, .55));
+  animation: ev-twinkle 2.6s ease-in-out infinite;
+}
+.ev-tug .ev-swing { animation: ev-tug .26s ease-in; }
+@keyframes ev-swing { from { transform: rotate(-7deg); } to { transform: rotate(7deg); } }
+@keyframes ev-twinkle { 0%, 70%, 100% { filter: drop-shadow(0 0 4px rgba(255, 213, 74, .4)); transform: scale(1); }
+  80% { filter: drop-shadow(0 0 12px rgba(255, 213, 74, .95)); transform: scale(1.12); } }
+@keyframes ev-tug { 50% { transform: translateY(10px) scaleY(1.05); } }
+
+.ev-overlay {
+  position: fixed; inset: 0; z-index: 40; background: rgba(8, 9, 12, .78); backdrop-filter: blur(4px);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.ev-sheet {
+  width: 100%; max-width: 520px; max-height: 100dvh; overflow-y: auto;
+  padding: 16px 16px calc(20px + env(safe-area-inset-bottom)); border-radius: 22px 22px 0 0;
+  border: 1px solid rgba(255, 213, 74, .45); border-bottom: 0;
+  background: radial-gradient(120% 60% at 50% 0%, rgba(255, 213, 74, .14), transparent 60%), var(--surface);
+  display: flex; flex-direction: column; gap: 14px; animation: ev-up .28s ease-out;
+}
+@keyframes ev-up { from { transform: translateY(40px); opacity: 0; } }
+.ev-tag { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--gold); }
+.ev-close { min-height: 36px; width: 36px; }
+.ev-stage { display: flex; flex-direction: column; gap: 14px; min-height: 360px; }
+.ev-intro, .ev-result { display: flex; flex-direction: column; gap: 14px; align-items: stretch; }
+.ev-big-ic { font-size: 52px; line-height: 1; text-align: center; }
+.ev-title { font: 700 22px/1.2 'Unbounded', sans-serif; margin: 0; text-align: center; }
+.ev-rules { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; font-size: 15px; }
+.ev-rules li { padding: 10px 12px; border-radius: 12px; background: var(--bar); }
+.ev-prize { padding: 12px 14px; border-radius: 14px; border: 1px dashed var(--gold); display: flex; flex-direction: column; gap: 4px; }
+.ev-prize p { margin: 0; font-size: 15px; }
+.ev-gold { color: var(--gold); }
+
+.ev-head { display: flex; align-items: center; justify-content: space-between; }
+.ev-dots { display: flex; gap: 8px; }
+.ev-dots i { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line-2); }
+.ev-dots i.ev-hit { border-color: var(--gold); background: var(--gold); box-shadow: 0 0 10px rgba(255, 213, 74, .6); }
+.ev-dots i.ev-miss { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 25%, transparent); }
+.ev-mult { font: 700 28px/1 'Unbounded', sans-serif; color: var(--gold); }
+.ev-pop { animation: ev-pop .4s ease-out; }
+@keyframes ev-pop { 40% { transform: scale(1.3); } }
+.ev-play { display: flex; flex-direction: column; gap: 16px; }
+.ev-flash { margin: 0; min-height: 22px; text-align: center; font-weight: 600; color: var(--muted); }
+.ev-ok { color: var(--gold); }
+.ev-no { color: var(--bad); }
+
+/* Б: приказы */
+.ev-order { min-height: 110px; padding: 16px; border-radius: 16px; background: var(--bg); border: 1px solid var(--line-2);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-align: center; }
+.ev-order-in { animation: ev-up .2s ease-out; }
+.ev-order-who { margin: 0; min-height: 20px; color: var(--gold); font-weight: 600; font-size: 15px; }
+.ev-order-what { margin: 0; font: 700 26px/1.2 'Unbounded', sans-serif; }
+.ev-timer { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.ev-timer i { display: block; height: 100%; background: var(--gold); }
+.ev-moves { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.ev-move { min-height: 84px; border-radius: 14px; border: 1px solid var(--line-2); background: var(--bar); color: var(--text);
+  font: 600 14px 'Onest', sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; cursor: pointer; }
+.ev-move-ic { font-size: 28px; line-height: 1; }
+.ev-move:disabled { cursor: default; }
+.ev-move-ok { border-color: var(--gold); background: rgba(255, 213, 74, .14); }
+.ev-move-no { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 16%, transparent); }
+
+/* Итог */
+.ev-result { align-items: center; text-align: center; padding-top: 12px; }
+.ev-res-n { margin: 0; color: var(--muted); font-weight: 600; }
+.ev-res-m { margin: 0; font: 700 64px/1 'Unbounded', sans-serif; color: var(--gold); }
+.ev-result-max .ev-res-m { text-shadow: 0 0 24px rgba(255, 213, 74, .7); animation: ev-pop .6s ease-out; }
+.ev-result .btn { width: 100%; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ev-swing, .ev-star-ic { animation: none; }
+}
+.event-set { border-color: rgba(255, 213, 74, .45); }
+.ev-state { display: flex; flex-direction: column; gap: 6px; padding: 12px; border-radius: 12px; background: var(--bar); }
+.ev-state p { margin: 0; }

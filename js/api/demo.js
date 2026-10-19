@@ -64,6 +64,7 @@ const db = {
   ideas: [],
   theory: [],
   body: [],
+  events: [], // события дня: {athlete_id, date, title, game, score} — score null, пока не сыграл
   videos: [], // видео из Telegram, к которым ещё нет повторов: {athlete_id, date, no, url}
 };
 let current = ATHLETE;
@@ -249,6 +250,21 @@ function allinApply(a, date) {
       : 'Всё или ничего отменено' });
 }
 
+// Бонус события дня — как event_apply в базе: (подходы + «Всё или ничего») × 0.1 × score.
+function eventApply(a, date) {
+  if (isCal(rulesFor(date))) return;
+  const e = db.events.find((x) => x.athlete_id === a && x.date === date);
+  const pending = db.logs.some((l) => l.athlete_id === a && l.date === date && l.review === 'pending');
+  const base = db.ledger.filter((x) => x.athlete_id === a && x.date === date && (x.kind === 'set' || x.kind === 'modifier'))
+    .reduce((n, x) => n + x.rating, 0);
+  const want = e?.score > 0 && date < today() && !pending ? Math.max(Math.round((base * e.score) / 10), 0) : 0;
+  const have = db.ledger.filter((x) => x.athlete_id === a && x.date === date && x.kind === 'event').reduce((n, x) => n + x.rating, 0);
+  const delta = want - have;
+  if (!delta) return;
+  addLedger({ athlete_id: a, date, kind: 'event', amount: Math.max(delta, -balance(a)), rating: delta,
+    note: e ? `${have ? 'Пересмотр: ' : ''}${e.title}: ${e.score} из 5 · очки дня ×${(1 + e.score / 10).toFixed(1)}` : 'Событие убрано' });
+}
+
 function awardSet(l) {
   let r = rulesFor(l.date);
   const cal = isCal(r);
@@ -320,6 +336,9 @@ function settle(a) {
 
   [...new Set(db.purchases.filter((p) => p.athlete_id === a && p.kind === 'allin' && p.date < t && p.date >= addDays(t, -60))
     .map((p) => p.date))].forEach((d) => allinApply(a, d));
+  [...new Set([...db.events.filter((e) => e.athlete_id === a).map((e) => e.date),
+    ...db.ledger.filter((x) => x.athlete_id === a && x.kind === 'event').map((x) => x.date)])]
+    .filter((d) => d < t && d >= addDays(t, -60)).forEach((d) => eventApply(a, d));
 
   const price = rulesFor(t)?.phone_price;
   if (price > 0) {
@@ -544,6 +563,9 @@ function setStatus(a, date, status) {
     videoAccept(row, tgLink(412 + i));
   });
   db.videos.push({ athlete_id: a, date: T, no: 4, url: tgLink(416) });
+  // Событие понедельника: звезда на ниточке, мини-игра «Генерал приказал» на ×1.5.
+  db.events.push({ athlete_id: a, date: T, title: 'Событие понедельника', game: 'b', score: null, done: false });
+  db.events.push({ athlete_id: a, date: addDays(T, -2), title: 'Событие субботы', game: 'b', score: 4, done: true });
   settle(a);
 }());
 
@@ -807,6 +829,36 @@ export const api = {
   async buyAllin(date) {
     needAthlete();
     return clone(buyAllin(current.id, date));
+  },
+
+  async eventDay(date, athleteId) {
+    const a = athleteId ?? current.id;
+    if (a !== current.id) needAdmin();
+    const e = db.events.find((x) => x.athlete_id === a && x.date === date);
+    if (!e) return null;
+    const bonus = db.ledger.filter((x) => x.athlete_id === a && x.date === date && x.kind === 'event').reduce((n, x) => n + x.rating, 0);
+    return clone({ ...e, test: isCal(rulesFor(date)), bonus });
+  },
+
+  async setEvent(a, date, game, title) {
+    needAdmin();
+    if (date < today()) fail('Событие можно поставить только на сегодня или позже');
+    const e = db.events.find((x) => x.athlete_id === a && x.date === date);
+    if (e && e.score !== null) fail('Атлет уже начал играть, событие не поменять');
+    db.events = db.events.filter((x) => x !== e);
+    if (!game) return null;
+    db.events.push({ athlete_id: a, date, title: title?.trim() || 'Событие дня', game, score: null, done: false });
+    return this.eventDay(date, a);
+  },
+
+  async playEvent(date, score, done) {
+    needAthlete();
+    const e = db.events.find((x) => x.athlete_id === current.id && x.date === date);
+    if (!e || date !== today()) fail('Сегодня события нет');
+    if (e.done) fail('Попытка уже была');
+    e.score = Math.max(e.score ?? 0, Math.min(5, Math.round(score ?? 0)));
+    e.done = Boolean(done);
+    return this.eventDay(date);
   },
 
   async allinDay(date, athleteId) {
