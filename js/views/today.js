@@ -1,9 +1,12 @@
 // «Сегодня»: утренний опрос и подходы дня. Тот же экран открывает прошлый день
 // из календаря, а админу показывает день друга без возможности править.
 
-import { html, dayTitle, addDays, shortDate, debounce } from '../util.js';
+import { html, raw, dayTitle, addDays, shortDate, debounce } from '../util.js';
 import { MUSCLES, DAY_STATUS, caption, goalText, reviewNote, dayMode, isCalibration, unitOf, unitText,
   ALLIN, ALLIN_STATE, signed, swapItems, pickLocked, videoCaption } from '../logic.js';
+import { openGuide } from './guide.js';
+import { guideFor } from '../guide-data.js';
+import { poseSVG, svg, fitBox } from '../figure.js';
 
 const BANNER_KEY = 'video-banner-1'; // «Понятно» на плашке про видео — помним в браузере
 
@@ -73,6 +76,8 @@ export async function render(el, ctx, args, alive) {
       </div>
     </header>
 
+    ${isToday ? guideButton() : ''}
+
     ${video.on && !isAdmin && isToday && status === 'training' && !beforeStart ? videoBanner(seenBanner(), day.plan) : ''}
 
     ${allin && status === 'training' && !beforeStart ? allinCard(allin, isToday) : ''}
@@ -115,6 +120,10 @@ export async function render(el, ctx, args, alive) {
     ctx.refresh();
   });
 
+  const guide = (focus) => openGuide(ctx, { catalog, plan: status === 'training' && !beforeStart ? day?.plan : null, focus });
+  el.querySelector('[data-guide]')?.addEventListener('click', () => guide(null));
+  el.querySelectorAll('[data-guide-ex]').forEach((b) => b.addEventListener('click', () => guide(Number(b.dataset.guideEx))));
+
   if (editable) wireSets(el, ctx, date, state, mode);
   wireCopy(el);
   if (!isAdmin && mode === 'open') {
@@ -144,6 +153,7 @@ function pickCard(ex, i, total, date, state, editable, mode, catalog, allin, log
     return html`<section class="card pick-card">
       <p class="swap-from">🎯 Упражнение ${i + 1} из ${total} · выбери одно</p>
       ${tiles}
+      <div class="gd-links">📖 Как делать: ${ex.pick.map((o, k) => html`${k ? ' · ' : ''}<button type="button" data-guide-ex="${o.id}">${o.name}</button>`)}</div>
       ${isAdmin ? html`<p class="label">Друг ещё не выбрал.</p>` : mode !== 'open' ? html`<p class="label">Выбор не сделан.</p>`
         : i === state.firstPick ? html`<p class="label">Очки за подход у обоих примерно одинаковые. Выбор можно поменять, пока не отмечен первый подход.</p>` : ''}
     </section>`;
@@ -153,6 +163,16 @@ function pickCard(ex, i, total, date, state, editable, mode, catalog, allin, log
     ? html`<p class="swap-from">🎯 Выбор · второй вариант был «${other.name}»</p>`
     : html`<div class="stack-4"><p class="swap-from">🎯 Упражнение ${i + 1} из ${total} · можно поменять до первого подхода</p>${tiles}</div>`;
   return exerciseCard(ex, date, state, editable, mode, catalog, allin, head, base);
+}
+
+// Кнопка справочника: на иконке — человечек в приседе.
+function guideButton() {
+  const g = guideFor('Приседания');
+  const pic = g ? raw(svg(poseSVG(g.frames[1]), '', fitBox(g.frames))) : '';
+  return html`<button type="button" class="gd-open" data-guide>
+    <span class="gd-open-ic">${pic}</span>
+    <span><b>📖 Справочник упражнений</b><small>Картинки: как делать правильно</small></span>
+    <span class="gd-arrow" aria-hidden="true">›</span></button>`;
 }
 
 // Серия и множитель, на который умножаются очки за сегодняшние подходы.
@@ -232,8 +252,9 @@ function exerciseCard(ex, date, state, editable, mode, catalog, allin, head = ''
     ${head}
     <div class="stack-4">
       ${ex.from ? html`<p class="swap-from">🔁 Замена · вместо «${ex.from.name}»</p>` : ''}
-      <div class="row"><h2 class="h2">${ex.name}</h2>${bet ? html`<span class="chip allin-bet">${ALLIN_STATE[bet.state].icon} ${
-        bet.state === 'done' ? `+${allin.up}` : bet.state === 'miss' ? `−${allin.down}` : `+${allin.up} / −${allin.down}`}</span>` : ''}</div>
+      <div class="row"><h2 class="h2">${ex.name}</h2><span class="row-gap">${bet ? html`<span class="chip allin-bet">${ALLIN_STATE[bet.state].icon} ${
+        bet.state === 'done' ? `+${allin.up}` : bet.state === 'miss' ? `−${allin.down}` : `+${allin.up} / −${allin.down}`}</span>` : ''}
+        <button type="button" class="gd-q" data-guide-ex="${ex.id}" aria-label="Как делать: ${ex.name}">?</button></span></div>
       <p class="label">${goalText(ex, unit)}</p></div>
     ${sets.map((n) => {
       const key = `${ex.id}-${n}`;
