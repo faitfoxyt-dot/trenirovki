@@ -14,8 +14,10 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const lerpP = (a, b, t) => (a && b ? [lerp(a[0], b[0], t), lerp(a[1], b[1], t)] : a ?? b);
 const f1 = (n) => Math.round(n * 10) / 10;
 
-// Два звена от корня к цели. Сустав выбирается со стороны pref (куда «смотрит» локоть или колено).
-function reach(root, target, l1, l2, pref) {
+// Два звена от корня к цели. Из двух положений сустава берём то, где сгиб идёт как у человека:
+// колено сгибается назад, локоть вперёд. bend — нужный знак поворота от первого звена ко второму.
+// Знак не зависит от того, куда тянется кисть или стопа, поэтому в анимации сустав не перескакивает.
+function reach(root, target, l1, l2, bend) {
   const dx = target[0] - root[0];
   const dy = target[1] - root[1];
   const d = Math.min(Math.max(Math.hypot(dx, dy), Math.abs(l1 - l2) + 0.01), l1 + l2 - 0.01);
@@ -23,14 +25,14 @@ function reach(root, target, l1, l2, pref) {
   const a = Math.acos((l1 * l1 + d * d - l2 * l2) / (2 * l1 * d));
   const j1 = [root[0] + l1 * Math.cos(base + a), root[1] + l1 * Math.sin(base + a)];
   const j2 = [root[0] + l1 * Math.cos(base - a), root[1] + l1 * Math.sin(base - a)];
-  const dot = (j) => (j[0] - root[0]) * pref[0] + (j[1] - root[1]) * pref[1];
-  const joint = dot(j1) >= dot(j2) ? j1 : j2;
+  const turn = (j) => (j[0] - root[0]) * (target[1] - j[1]) - (j[1] - root[1]) * (target[0] - j[0]);
+  const joint = turn(j1) * bend >= turn(j2) * bend ? j1 : j2;
   const ang = Math.atan2(target[1] - joint[1], target[0] - joint[0]);
   return [joint, [joint[0] + l2 * Math.cos(ang), joint[1] + l2 * Math.sin(ang)]];
 }
 
 // Поза → координаты суставов.
-function solve(p) {
+export function solve(p) {
   const hip = p.hip;
   const td = dir(p.t ?? 0);
   const sh = add(hip, td, L.torso);
@@ -38,19 +40,21 @@ function solve(p) {
   const head = add(sh, hd, L.neck + L.head);
   const side = p.back ? -1 : 1; // лёжа на спине лицо смотрит в другую сторону
   const nose = dir((p.t ?? 0) + (p.hd ?? 0) + 90 * side);
-  const arm = (h, e) => { const [el, wr] = reach(sh, h, L.ua, L.fa, e ?? p.e ?? [-1, 0.3]); return { el, wr }; };
-  const leg = (f, k, ft) => {
-    const [kn, an] = reach(hip, f, L.th, L.sh, k ?? p.k ?? [1, 0]);
+  const arm = (h) => { const [el, wr] = reach(sh, h, L.ua, L.fa, -side); return { el, wr }; };
+  const leg = (f, ft) => {
+    const [kn, an] = reach(hip, f, L.th, L.sh, side);
     return { kn, an, toe: add(an, dir(ft ?? p.ft ?? 90), L.foot) };
   };
   return {
     hip, sh, head, nose,
-    arm: arm(p.h, p.e), arm2: p.h2 ? arm(p.h2, p.e2) : null,
-    leg: leg(p.f, p.k, p.ft), leg2: p.f2 ? leg(p.f2, p.k2, p.ft2) : null,
+    arm: arm(p.h), arm2: p.h2 ? arm(p.h2) : null,
+    leg: leg(p.f, p.ft), leg2: p.f2 ? leg(p.f2, p.ft2) : null,
   };
 }
 
-const seg = (a, b, w, cls) => `<line class="${cls}" x1="${f1(a[0])}" y1="${f1(a[1])}" x2="${f1(b[0])}" y2="${f1(b[1])}" stroke-width="${w}"/>`;
+const line = (a, b, w, cls) => `<line class="${cls}" x1="${f1(a[0])}" y1="${f1(a[1])}" x2="${f1(b[0])}" y2="${f1(b[1])}" stroke-width="${w}"/>`;
+// Рабочая мышца светится: под ней широкая полупрозрачная линия (без CSS-фильтров — они тормозят анимацию на телефоне).
+const seg = (a, b, w, cls) => (cls === 'fg-hot' ? line(a, b, w + 6, 'fg-glow') : '') + line(a, b, w, cls);
 
 // Предметы: пол, турник, стул, диван, стена, рюкзак.
 function props(p, j) {
@@ -132,10 +136,29 @@ export function gripSVG(kind) {
 }
 
 const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
-const mix = (a, b, t) => {
+// Промежуточная поза. Кисть или стопа, которая стоит на месте (на полу, на турнике), остаётся на месте.
+// Остальные идут по дуге вокруг плеча или таза: прямая нога поднимается прямой, а не сгибается по пути.
+const shoulderOf = (p) => add(p.hip, dir(p.t ?? 0), L.torso);
+function arc(pa, pb, ra, rb, r, t) {
+  if (!pa || !pb) return pa ?? pb;
+  if (Math.hypot(pa[0] - pb[0], pa[1] - pb[1]) < 0.5) return pa;
+  const aa = Math.atan2(pa[1] - ra[1], pa[0] - ra[0]);
+  let ab = Math.atan2(pb[1] - rb[1], pb[0] - rb[0]);
+  if (ab - aa > Math.PI) ab -= 2 * Math.PI;
+  if (aa - ab > Math.PI) ab += 2 * Math.PI;
+  const ang = lerp(aa, ab, t);
+  const len = lerp(Math.hypot(pa[0] - ra[0], pa[1] - ra[1]), Math.hypot(pb[0] - rb[0], pb[1] - rb[1]), t);
+  return [r[0] + len * Math.cos(ang), r[1] + len * Math.sin(ang)];
+}
+export const mix = (a, b, t) => {
   const out = { ...a };
-  for (const k of ['hip', 'h', 'h2', 'f', 'f2', 'e', 'e2', 'k', 'k2']) if (a[k] || b[k]) out[k] = lerpP(a[k], b[k], t);
+  out.hip = lerpP(a.hip, b.hip, t);
   for (const k of ['t', 'hd', 'ft', 'ft2']) if (a[k] !== undefined || b[k] !== undefined) out[k] = lerp(a[k] ?? 0, b[k] ?? 0, t);
+  const sa = shoulderOf(a);
+  const sb = shoulderOf(b);
+  const so = shoulderOf(out);
+  for (const k of ['h', 'h2']) if (a[k] || b[k]) out[k] = arc(a[k], b[k], sa, sb, so, t);
+  for (const k of ['f', 'f2']) if (a[k] || b[k]) out[k] = arc(a[k], b[k], a.hip, b.hip, out.hip, t);
   if (Array.isArray(a.bag) && Array.isArray(b.bag)) out.bag = lerpP(a.bag, b.bag, t);
   return out;
 };
@@ -185,6 +208,7 @@ export function play(el, frames, onPhase = () => {}) {
   let i = 0;
   let t0 = performance.now();
   let raf = 0;
+  let last = '';
   onPhase(0);
   const tick = (now) => {
     if (!el.isConnected) return;
@@ -193,14 +217,16 @@ export function play(el, frames, onPhase = () => {}) {
     const hold = a.hold ?? HOLD;
     const move = b.move ?? 900;
     const dt = now - t0;
-    if (dt < hold) g.innerHTML = poseSVG(a);
-    else if (dt < hold + move) g.innerHTML = poseSVG(mix(a, b, ease((dt - hold) / move)));
+    let next;
+    if (dt < hold) next = poseSVG(a);
+    else if (dt < hold + move) next = poseSVG(mix(a, b, ease((dt - hold) / move)));
     else {
       i = (i + 1) % frames.length;
       t0 = now;
       onPhase(i);
-      g.innerHTML = poseSVG(frames[i]);
+      next = poseSVG(frames[i]);
     }
+    if (next !== last) { g.innerHTML = next; last = next; } // пока поза стоит, ничего не перерисовываем
     raf = requestAnimationFrame(tick);
   };
   raf = requestAnimationFrame(tick);

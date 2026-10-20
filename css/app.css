@@ -739,7 +739,8 @@ i.cx-h { width: 12px; height: 12px; display: inline-block; border-radius: 3px; }
 .fg-body-f { fill: #DCE0E6; }
 .fg-far { stroke: #5C626E; }
 .fg-far-f { fill: #5C626E; }
-.fg-hot { stroke: var(--accent); filter: drop-shadow(0 0 3px rgba(198, 244, 50, .55)); }
+.fg-hot { stroke: var(--accent); }
+.fg-glow { stroke: rgba(198, 244, 50, .18); }
 .fg-hot-f { fill: var(--accent); }
 .fg-eye { fill: var(--bg); }
 .fg-floor { stroke: var(--line-2); stroke-width: 2; }
@@ -748,13 +749,14 @@ i.cx-h { width: 12px; height: 12px; display: inline-block; border-radius: 3px; }
 .fg-bar { fill: #8C93A0; }
 .fg-bag rect { fill: #FF8A3D; }
 .fg-bag .fg-bag-2 { fill: #C25E1F; }
-.fg-bad .fg-body, .fg-bad .fg-hot { stroke: var(--bad); filter: none; }
+.fg-bad .fg-body, .fg-bad .fg-hot { stroke: var(--bad); }
+.fg-bad .fg-glow { stroke: none; }
 .fg-bad .fg-body-f { fill: var(--bad); }
 .fg-grip { width: 64px; height: 32px; display: block; flex: none; }
 
 body.gd-lock { overflow: hidden; }
 .gd-overlay {
-  position: fixed; inset: 0; z-index: 45; background: rgba(8, 9, 12, .78); backdrop-filter: blur(4px);
+  position: fixed; inset: 0; z-index: 45; background: rgba(8, 9, 12, .86);
   display: flex; align-items: flex-end; justify-content: center;
 }
 .gd-sheet {
