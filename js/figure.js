@@ -13,6 +13,10 @@ const add = (a, b, k = 1) => [a[0] + b[0] * k, a[1] + b[1] * k];
 const lerp = (a, b, t) => a + (b - a) * t;
 const lerpP = (a, b, t) => (a && b ? [lerp(a[0], b[0], t), lerp(a[1], b[1], t)] : a ?? b);
 const f1 = (n) => Math.round(n * 10) / 10;
+const angle = (a, b) => (Math.atan2(b[0] - a[0], a[1] - b[1]) * 180) / Math.PI;
+const norm = (d) => ((((d + 180) % 360) + 360) % 360) - 180;
+// Угол стопы от голени: −90 — стопа под прямым углом, 0 — носок вытянут по голени.
+const clampFoot = (rel) => Math.min(5, Math.max(-125, rel));
 
 // Два звена от корня к цели. Из двух положений сустава берём то, где сгиб идёт как у человека:
 // колено сгибается назад, локоть вперёд. bend — нужный знак поворота от первого звена ко второму.
@@ -41,14 +45,17 @@ export function solve(p) {
   const side = p.back ? -1 : 1; // лёжа на спине лицо смотрит в другую сторону
   const nose = dir((p.t ?? 0) + (p.hd ?? 0) + 90 * side);
   const arm = (h) => { const [el, wr] = reach(sh, h, L.ua, L.fa, -side); return { el, wr }; };
-  const leg = (f, ft) => {
+  const leg = (f, ft, fr) => {
     const [kn, an] = reach(hip, f, L.th, L.sh, side);
-    return { kn, an, toe: add(an, dir(ft ?? p.ft ?? 90), L.foot) };
+    const shin = angle(kn, an);
+    // Стопа гнётся только как у человека: от «носок на себя» до «носок вытянут».
+    const rel = clampFoot(fr ?? side * norm((ft ?? 90) - shin));
+    return { kn, an, toe: add(an, dir(shin + side * rel), L.foot), rel };
   };
   return {
     hip, sh, head, nose,
     arm: arm(p.h), arm2: p.h2 ? arm(p.h2) : null,
-    leg: leg(p.f, p.ft), leg2: p.f2 ? leg(p.f2, p.ft2) : null,
+    leg: leg(p.f, p.ft ?? 90, p.fr), leg2: p.f2 ? leg(p.f2, p.ft2 ?? p.ft ?? 90, p.fr2) : null,
   };
 }
 
@@ -90,29 +97,91 @@ function bag(p, j) {
     + `<rect class="fg-bag-2" x="${f1(x + 3)}" y="${f1(y + 7)}" width="8" height="5" rx="1.5"/></g>`;
 }
 
+// Дальние рука и нога, если поза их не задаёт, идут чуть позади ближних: видно, что ног и рук две.
+const BEHIND = [-2.4, -1.8];
+const shift = (pt) => [pt[0] + BEHIND[0], pt[1] + BEHIND[1]];
+
+// Корпус — не палка, а форма: у таза уже, в груди шире, грудь со стороны лица.
+function torso(hip, sh, side, cls) {
+  const d = [sh[0] - hip[0], sh[1] - hip[1]];
+  const len = Math.hypot(d[0], d[1]);
+  const u = [d[0] / len, d[1] / len];
+  const n = [-u[1] * side, u[0] * side]; // наружу со стороны груди
+  const at = (k, front, back) => [[hip[0] + d[0] * k + n[0] * front, hip[1] + d[1] * k + n[1] * front],
+    [hip[0] + d[0] * k - n[0] * back, hip[1] + d[1] * k - n[1] * back]];
+  const [a1, b1] = at(0, 4.6, 4.6);
+  const [a2, b2] = at(0.45, 4.4, 4.8);
+  const [a3, b3] = at(0.8, 6.6, 5.4);
+  const [a4, b4] = at(1, 5, 4.6);
+  const pt = (q) => `${f1(q[0])},${f1(q[1])}`;
+  return `<path class="${cls}-s" d="M${pt(a1)} L${pt(a2)} L${pt(a3)} L${pt(a4)} L${pt(b4)} L${pt(b3)} L${pt(b2)} L${pt(b1)} Z"/>`;
+}
+
 // Тело рисуется слоями: дальние руки и ноги приглушены, ближние — поверх корпуса.
-export function poseSVG(p) {
+// props: false — без пола и предметов (для призрака начальной позы).
+export function poseSVG(p, opt = {}) {
   const j = solve(p);
-  const hot = new Set(p.hot ?? []);
+  const side = p.back ? -1 : 1;
+  const hot = new Set(opt.ghost ? [] : p.hot ?? []);
   const c = (part, far) => (far ? 'fg-far' : hot.has(part) ? 'fg-hot' : 'fg-body');
-  const limbArm = (a, far) => seg(j.sh, a.el, W.ua, c('ua', far)) + seg(a.el, a.wr, W.fa, c('fa', far))
+  const limbArm = (a, far, root = j.sh) => seg(root, a.el, W.ua, c('ua', far)) + seg(a.el, a.wr, W.fa, c('fa', far))
     + `<circle class="${far ? 'fg-far-f' : 'fg-body-f'}" cx="${f1(a.wr[0])}" cy="${f1(a.wr[1])}" r="3.2"/>`;
-  const limbLeg = (l, far) => seg(j.hip, l.kn, W.th, c('th', far)) + seg(l.kn, l.an, W.sh, c('sh', far))
+  const limbLeg = (l, far, root = j.hip) => seg(root, l.kn, W.th, c('th', far)) + seg(l.kn, l.an, W.sh, c('sh', far))
     + seg(l.an, l.toe, W.foot, far ? 'fg-far' : 'fg-body');
+  const farLeg = j.leg2 ? limbLeg(j.leg2, true)
+    : limbLeg({ kn: shift(j.leg.kn), an: shift(j.leg.an), toe: shift(j.leg.toe) }, true, shift(j.hip));
+  const farArm = j.arm2 ? limbArm(j.arm2, true)
+    : limbArm({ el: shift(j.arm.el), wr: shift(j.arm.wr) }, true, shift(j.sh));
   const neck = add(j.sh, dir((p.t ?? 0) + (p.hd ?? 0)), L.neck * 0.6);
   const n1 = add(j.head, j.nose, L.head - 1);
-  return props(p, j)
-    + (j.leg2 ? limbLeg(j.leg2, true) : '')
-    + (j.arm2 ? limbArm(j.arm2, true) : '')
+  const tc = hot.has('torso') ? 'fg-hot' : 'fg-body';
+  return (opt.props === false ? '' : props(p, j))
+    + farLeg + farArm
     + (p.bag2 ? bag({ ...p, bag: p.bag2 }, j) : '')
     + seg(j.sh, neck, 6, 'fg-body')
-    + seg(j.hip, j.sh, W.torso, c('torso'))
-    + (hot.has('hip') ? `<circle class="fg-hot-f" cx="${f1(j.hip[0])}" cy="${f1(j.hip[1])}" r="6.5"/>` : '')
+    + (tc === 'fg-hot' ? line(j.hip, j.sh, 14, 'fg-glow') : '')
+    + torso(j.hip, j.sh, side, tc)
+    + `<circle class="${hot.has('hip') ? 'fg-hot-f' : 'fg-body-f'}" cx="${f1(j.hip[0])}" cy="${f1(j.hip[1])}" r="${hot.has('hip') ? 6.5 : 5}"/>`
     + `<circle class="fg-body-f" cx="${f1(j.head[0])}" cy="${f1(j.head[1])}" r="${L.head}"/>`
     + `<circle class="fg-eye" cx="${f1(n1[0])}" cy="${f1(n1[1])}" r="1.6"/>`
     + limbLeg(j.leg)
     + limbArm(j.arm)
     + bag(p, j);
+}
+
+// Неподвижный слой под человечком: коврик для упражнений лёжа, бледная начальная поза
+// и пунктир — куда движется то, что работает (стопы, кисти или голова), со стрелкой.
+export function underlay(frames, { ghost = true } = {}) {
+  let out = '';
+  const lying = frames.some((p) => p.floor !== false && !p.chair && !p.bar && p.hip[1] > 96);
+  if (lying) {
+    const xs = [];
+    for (const p of frames) { const j = solve(p); xs.push(j.head[0], j.leg.toe[0], j.leg.an[0], j.arm.wr[0], j.hip[0]); }
+    const x0 = Math.min(...xs) - 8;
+    const x1 = Math.max(...xs) + 8;
+    out += `<rect class="fg-mat" x="${f1(x0)}" y="${FLOOR - 1.2}" width="${f1(x1 - x0)}" height="3.2" rx="1.6"/>`;
+  }
+  if (frames.length < 2) return out;
+  if (ghost) out += `<g class="fg-ghost">${poseSVG(frames[0], { props: false, ghost: true })}</g>`;
+  const ends = (p) => { const j = solve(p); return [j.leg.toe, j.arm.wr, j.head, j.hip]; };
+  const pts = Array.from({ length: 17 }, (_, k) => ends(mix(frames[0], frames[1], k / 16)));
+  const fixed = ['foot', 'hand', 'head', 'hip'].indexOf(frames[0].trail);
+  let best = 0;
+  let pick = Math.max(fixed, 0);
+  for (let e = 0; e < 4 && fixed < 0; e++) {
+    let len = 0;
+    for (let k = 1; k < pts.length; k++) len += Math.hypot(pts[k][e][0] - pts[k - 1][e][0], pts[k][e][1] - pts[k - 1][e][1]);
+    if (len > best + 2) { best = len; pick = e; }
+  }
+  if (fixed < 0 && best < 8) return out;
+  const path = pts.map((q) => q[pick]);
+  const [ax, ay] = path[path.length - 1];
+  const [bx, by] = path[path.length - 3];
+  const ang = Math.atan2(ay - by, ax - bx);
+  const tip = (da, l) => `${f1(ax + l * Math.cos(ang + da))},${f1(ay + l * Math.sin(ang + da))}`;
+  out += `<polyline class="fg-trail" points="${path.slice(0, -1).map((q) => `${f1(q[0])},${f1(q[1])}`).join(' ')}"/>`
+    + `<polygon class="fg-trail-tip" points="${f1(ax + 2 * Math.cos(ang))},${f1(ay + 2 * Math.sin(ang))} ${tip(2.5, 6)} ${tip(-2.5, 6)}"/>`;
+  return out;
 }
 
 // Хват сверху (вид спереди): где кисти относительно плеч и куда смотрят ладони.
@@ -153,7 +222,12 @@ function arc(pa, pb, ra, rb, r, t) {
 export const mix = (a, b, t) => {
   const out = { ...a };
   out.hip = lerpP(a.hip, b.hip, t);
-  for (const k of ['t', 'hd', 'ft', 'ft2']) if (a[k] !== undefined || b[k] !== undefined) out[k] = lerp(a[k] ?? 0, b[k] ?? 0, t);
+  for (const k of ['t', 'hd']) if (a[k] !== undefined || b[k] !== undefined) out[k] = lerp(a[k] ?? 0, b[k] ?? 0, t);
+  // Стопу ведём углом от голени, а не от экрана, иначе посреди движения носок выворачивается.
+  const ja = solve(a);
+  const jb = solve(b);
+  out.fr = lerp(ja.leg.rel, jb.leg.rel, t);
+  if (ja.leg2 || jb.leg2) out.fr2 = lerp((ja.leg2 ?? ja.leg).rel, (jb.leg2 ?? jb.leg).rel, t);
   const sa = shoulderOf(a);
   const sb = shoulderOf(b);
   const so = shoulderOf(out);
@@ -193,12 +267,13 @@ export function fitBox(frames) {
   return [x0, y0, w, h].map(f1).join(' ');
 }
 
-export const svg = (inner, cls = '', box = VIEW) => `<svg class="fg ${cls}" viewBox="${box}" aria-hidden="true"><g>${inner}</g></svg>`;
+export const svg = (inner, cls = '', box = VIEW, under = '') =>
+  `<svg class="fg ${cls}" viewBox="${box}" aria-hidden="true"><g class="fg-under">${under}</g><g class="fg-live">${inner}</g></svg>`;
 
 // Петля по кадрам: держим позу, плавно переходим в следующую, после последней — к первой.
 // onPhase(i) зовётся, когда начинается кадр i (для подписи под картинкой).
 export function play(el, frames, onPhase = () => {}) {
-  const g = el.querySelector('g');
+  const g = el.querySelector('.fg-live');
   if (frames.length < 2 || matchMedia('(prefers-reduced-motion: reduce)').matches) {
     g.innerHTML = poseSVG(frames[frames.length - 1]);
     onPhase(frames.length - 1);

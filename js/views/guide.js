@@ -4,7 +4,7 @@
 import { html, raw } from '../util.js';
 import { goalText, unitOf } from '../logic.js';
 import { GROUPS, guideFor } from '../guide-data.js';
-import { poseSVG, svg, fitBox, play, gripSVG } from '../figure.js';
+import { poseSVG, svg, fitBox, play, gripSVG, underlay } from '../figure.js';
 
 // Упражнения дня по порядку: у «Выбора» — оба варианта.
 function planItems(plan) {
@@ -19,7 +19,7 @@ function planItems(plan) {
 const thumb = (g) => {
   if (!g) return html`<div class="gd-none" aria-hidden="true">?</div>`;
   const last = g.frames[g.frames.length - 1];
-  return raw(svg(poseSVG(last), '', fitBox(g.frames)));
+  return raw(svg(poseSVG(last), '', fitBox(g.frames), underlay(g.frames)));
 };
 
 export function openGuide(ctx, { catalog, plan, focus = null }) {
@@ -86,7 +86,7 @@ export function openGuide(ctx, { catalog, plan, focus = null }) {
         <button type="button" class="ghost gd-back">← Все упражнения</button>
         <button type="button" class="ghost icon gd-close" aria-label="Закрыть">✕</button></div>
       ${g ? html`<div class="gd-stage">
-          ${raw(svg('', '', box))}
+          ${raw(svg('', '', box, underlay(g.frames)))}
           ${g.hold ? html`<span class="gd-hold">⏱ Держи</span>` : ''}
           <div class="gd-phase">
             ${g.frames.length > 1 ? html`<span class="gd-dots">${g.frames.map(() => html`<i></i>`)}</span>` : ''}
@@ -105,7 +105,7 @@ export function openGuide(ctx, { catalog, plan, focus = null }) {
       ${g ? html`<section class="stack-8"><h3 class="gd-h3">Как делать</h3>
         <ol class="gd-steps">${g.steps.map((s, i) => html`<li><span class="news-n">${i + 1}</span><span>${s}</span></li>`)}</ol></section>
         <section class="stack-8"><h3 class="gd-h3">Частые ошибки</h3>
-          ${g.bad ? html`<div class="gd-bad">${raw(svg(poseSVG(g.bad), 'fg-bad', fitBox([g.bad])))}<span>✕ ${g.badText}</span></div>` : ''}
+          ${g.bad ? html`<div class="gd-bad">${raw(svg(poseSVG(g.bad), 'fg-bad', fitBox([g.bad]), underlay([g.bad])))}<span>✕ ${g.badText}</span></div>` : ''}
           <ul class="gd-mistakes">${g.mistakes.map((m) => html`<li><span aria-hidden="true">✕</span><span>${m}</span></li>`)}</ul></section>` : ''}
     `);
     sheet.querySelector('.gd-close').addEventListener('click', close);

@@ -6,7 +6,7 @@ import { MUSCLES, DAY_STATUS, caption, goalText, reviewNote, dayMode, isCalibrat
   ALLIN, ALLIN_STATE, signed, swapItems, pickLocked, videoCaption } from '../logic.js';
 import { openGuide } from './guide.js';
 import { guideFor } from '../guide-data.js';
-import { poseSVG, svg, fitBox } from '../figure.js';
+import { poseSVG, svg, fitBox, underlay } from '../figure.js';
 
 const BANNER_KEY = 'video-banner-1'; // «Понятно» на плашке про видео — помним в браузере
 
@@ -168,7 +168,7 @@ function pickCard(ex, i, total, date, state, editable, mode, catalog, allin, log
 // Кнопка справочника: на иконке — человечек в приседе.
 function guideButton() {
   const g = guideFor('Приседания');
-  const pic = g ? raw(svg(poseSVG(g.frames[1]), '', fitBox(g.frames))) : '';
+  const pic = g ? raw(svg(poseSVG(g.frames[1]), '', fitBox(g.frames), underlay(g.frames, { ghost: false }))) : '';
   return html`<button type="button" class="gd-open" data-guide>
     <span class="gd-open-ic">${pic}</span>
     <span><b>📖 Справочник упражнений</b><small>Картинки: как делать правильно</small></span>
