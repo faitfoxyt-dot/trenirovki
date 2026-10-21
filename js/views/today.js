@@ -127,44 +127,53 @@ export async function render(el, ctx, args, alive) {
   if (editable) wireSets(el, ctx, date, state, mode);
   wireCopy(el);
   if (!isAdmin && mode === 'open') {
-    el.querySelectorAll('[data-pick]').forEach((b) => b.addEventListener('click', async () => {
+    // Плитку можно перетыкать сколько угодно, сохраняет только «Подтвердить» — и уже навсегда.
+    el.querySelectorAll('[data-pick]').forEach((b) => b.addEventListener('click', () => {
+      const card = b.closest('.pick-card');
+      card.querySelectorAll('[data-pick]').forEach((t) => {
+        const on = t === b;
+        t.classList.toggle('pick-on', on);
+        t.setAttribute('aria-pressed', String(on));
+      });
+      const ok = card.querySelector('[data-confirm]');
+      ok.disabled = false;
+      ok.dataset.k = b.dataset.pick;
+      ok.textContent = `Подтвердить: ${b.querySelector('.pick-name').textContent}`;
+    }));
+    el.querySelectorAll('[data-confirm]').forEach((b) => b.addEventListener('click', async () => {
+      b.disabled = true;
       try {
-        await api.chooseExercise(date, Number(b.dataset.i), Number(b.dataset.pick));
+        await api.chooseExercise(date, Number(b.dataset.i), Number(b.dataset.k));
         ctx.refresh();
-      } catch (err) { ctx.toast(err.message); }
+      } catch (err) { b.disabled = false; ctx.toast(err.message); }
     }));
   }
 }
 
-// Пробный «Выбор»: два варианта на одном месте, друг берёт один. Пока не выбрал — подходы скрыты.
+// Пробный «Выбор»: два варианта на одном месте, друг берёт один и подтверждает кнопкой — дальше не поменять.
+// Пока не подтвердил — подходы скрыты.
 function pickCard(ex, i, total, date, state, editable, mode, catalog, allin, logs, isAdmin, base) {
-  const locked = pickLocked(ex, logs);
-  const can = !isAdmin && mode === 'open' && !locked;
-  const tiles = html`<div class="pick-grid">${ex.pick.map((o, k) => {
-    const on = ex.chosen === k;
-    return html`<button type="button" class="pick-tile ${on ? 'pick-on' : ''}" data-pick="${k}" data-i="${i}"
-      aria-pressed="${on}" ${can && !on ? '' : html`disabled`}>
+  if (ex.chosen === null || ex.chosen === undefined) {
+    const can = !isAdmin && mode === 'open' && !pickLocked(ex, logs);
+    const tiles = html`<div class="pick-grid">${ex.pick.map((o, k) => html`<button type="button" class="pick-tile"
+      data-pick="${k}" aria-pressed="false" ${can ? '' : html`disabled`}>
       <span class="pick-name">${o.name}</span>
       <span class="label">${goalText({ sets: ex.sets, target_reps: o.target_reps }, unitOf(o, catalog))}</span>
       ${o.price != null ? effChip(o) : ''}
-      ${on ? html`<span class="pick-mark">✓ выбрано</span>` : ''}
-    </button>`;
-  })}</div>`;
-  if (ex.chosen === null) {
+    </button>`)}</div>`;
     return html`<section class="card pick-card">
       <p class="swap-from">🎯 Упражнение ${i + 1} из ${total} · выбери одно</p>
       ${tiles}
+      ${can ? html`<button type="button" class="btn" data-confirm data-i="${i}" disabled>Выбери вариант</button>` : ''}
       <div class="gd-links">📖 Как делать: ${ex.pick.map((o, k) => html`${k ? ' · ' : ''}<button type="button" data-guide-ex="${o.id}">${o.name}</button>`)}</div>
-      ${isAdmin ? html`<p class="label">Друг ещё не выбрал.</p>` : mode !== 'open' ? html`<p class="label">Выбор не сделан.</p>`
+      ${isAdmin ? html`<p class="label">Друг ещё не выбрал.</p>` : !can ? html`<p class="label">Выбор не сделан.</p>`
         : i === state.firstPick ? html`<p class="label">${ex.pick[0].price != null
-          ? 'Все упражнения стоят одинаково. Берёшь одно и то же подряд — эффективность каждый раз −10%. Возьмёшь другое — снова 100%.'
-          : 'Очки за подход у обоих примерно одинаковые.'} Выбор можно поменять, пока не отмечен первый подход.</p>` : ''}
+          ? 'Все упражнения стоят одинаково. Берёшь одно и то же подряд — эффективность каждый раз −10%. Возьмёшь другое — снова 100%. '
+          : ''}Выбери вариант и нажми «Подтвердить» — поменять потом нельзя.</p>` : ''}
     </section>`;
   }
   const other = ex.pick[1 - ex.chosen];
-  const head = locked || !can
-    ? html`<p class="swap-from">🎯 Выбор · второй вариант был «${other.name}»</p>`
-    : html`<div class="stack-4"><p class="swap-from">🎯 Упражнение ${i + 1} из ${total} · можно поменять до первого подхода</p>${tiles}</div>`;
+  const head = html`<p class="swap-from">🔒 Выбор подтверждён · второй вариант был «${other.name}»</p>`;
   return exerciseCard(ex, date, state, editable, mode, catalog, allin, head, base);
 }
 

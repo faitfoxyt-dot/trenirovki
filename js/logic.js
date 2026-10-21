@@ -188,8 +188,8 @@ export const ALLIN_STATE = {
 
 // Выбор упражнения (пробный режим): в пункте плана pick — два варианта [{id, name, unit, target_reps}],
 // chosen — какой выбран (null — ещё нет, тогда пункт считается первым вариантом).
-// Поменять выбор можно, пока у упражнения не отмечен ни один подход.
-export const pickLocked = (ex, logs) => logs.some((l) => l.exercise_id === ex.id && l.claimed != null);
+// Выбор подтверждают кнопкой один раз — потом его не поменять. Не выбрал, но уже отметил подход — тоже закрыто.
+export const pickLocked = (ex, logs) => ex.chosen != null || logs.some((l) => l.exercise_id === ex.id && l.claimed != null);
 export const choiceIds = (c) => c.items.flatMap((x) => (x.alt ? [x.id, x.alt.id] : [x.id]));
 
 // Замена по просьбе: что станет с упражнениями плана — как swap_items в базе.
