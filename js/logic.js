@@ -205,3 +205,33 @@ export function swapItems(plan, logs, catalog, ids = null) {
       target_reps: e.swap_target ?? to.target_reps ?? null } }];
   });
 }
+
+// Цена места при «Выборе»: каждое упражнение стоит одинаково (choice_price за все подходы в цель).
+// Эффективность: берёт то же самое подряд — каждый раз минус choice_drop % от цены (−10%, −20%, …),
+// но не ниже choice_floor %. Где выбора нет — 100%. null — цены места нет, очки по «Правилам» упражнения.
+export function choiceEff(r, times = 0) {
+  const drop = Number(r?.choice_drop ?? 0);
+  const floor = Number(r?.choice_floor ?? 0);
+  return Math.max(floor, 100 - drop * times);
+}
+export function choicePrice(r, times = 0) {
+  const base = Number(r?.choice_price);
+  if (!(base > 0)) return null;
+  return Math.round((base * choiceEff(r, times)) / 100);
+}
+// Цепочка цен подряд: 1000 → 900 → 800 → …
+export const choiceChain = (r, n = 5) => Array.from({ length: n }, (_, i) => choicePrice(r, i));
+
+// Очки за подход по цене места — как place_points в базе (до множителя серии).
+// Подход в цель — цена / подходы; меньше цели — по доле; сверх цели — полцены повтора за каждый лишний,
+// но за день по упражнению не больше 10% цены. other — бонус других подходов этого упражнения за день.
+export const PLACE_OVER = 0.5;
+export const PLACE_CAP = 0.1;
+export function placeSetPoints(price, sets, target, reps, other = 0) {
+  const per = price / Math.max(sets, 1);
+  if (!(reps > 0)) return { base: 0, bonus: 0 };
+  const base = !target || reps >= target ? per : (per * reps) / target;
+  const raw = target && reps > target ? ((reps - target) * per * PLACE_OVER) / target : 0;
+  const bonus = Math.max(0, Math.min(Math.round(raw), Math.round(price * PLACE_CAP) - other));
+  return { base: Math.round(base), bonus };
+}

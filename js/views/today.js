@@ -3,7 +3,7 @@
 
 import { html, raw, dayTitle, addDays, shortDate, debounce } from '../util.js';
 import { MUSCLES, DAY_STATUS, caption, goalText, reviewNote, dayMode, isCalibration, unitOf, unitText,
-  ALLIN, ALLIN_STATE, signed, swapItems, pickLocked, videoCaption } from '../logic.js';
+  ALLIN, ALLIN_STATE, signed, swapItems, pickLocked, videoCaption, PLACE_CAP, plural } from '../logic.js';
 import { openGuide } from './guide.js';
 import { guideFor } from '../guide-data.js';
 import { poseSVG, svg, fitBox, underlay } from '../figure.js';
@@ -146,6 +146,7 @@ function pickCard(ex, i, total, date, state, editable, mode, catalog, allin, log
       aria-pressed="${on}" ${can && !on ? '' : html`disabled`}>
       <span class="pick-name">${o.name}</span>
       <span class="label">${goalText({ sets: ex.sets, target_reps: o.target_reps }, unitOf(o, catalog))}</span>
+      ${o.price != null ? html`<span class="pick-price">${o.price} очков</span>${effChip(o)}` : ''}
       ${on ? html`<span class="pick-mark">✓ выбрано</span>` : ''}
     </button>`;
   })}</div>`;
@@ -155,7 +156,9 @@ function pickCard(ex, i, total, date, state, editable, mode, catalog, allin, log
       ${tiles}
       <div class="gd-links">📖 Как делать: ${ex.pick.map((o, k) => html`${k ? ' · ' : ''}<button type="button" data-guide-ex="${o.id}">${o.name}</button>`)}</div>
       ${isAdmin ? html`<p class="label">Друг ещё не выбрал.</p>` : mode !== 'open' ? html`<p class="label">Выбор не сделан.</p>`
-        : i === state.firstPick ? html`<p class="label">Очки за подход у обоих примерно одинаковые. Выбор можно поменять, пока не отмечен первый подход.</p>` : ''}
+        : i === state.firstPick ? html`<p class="label">${ex.pick[0].price != null
+          ? 'Каждое упражнение — 1000 очков за все подходы в цель. Берёшь одно и то же подряд — эффективность каждый раз −10%. Возьмёшь другое — снова 100%.'
+          : 'Очки за подход у обоих примерно одинаковые.'} Выбор можно поменять, пока не отмечен первый подход.</p>` : ''}
     </section>`;
   }
   const other = ex.pick[1 - ex.chosen];
@@ -163,6 +166,23 @@ function pickCard(ex, i, total, date, state, editable, mode, catalog, allin, log
     ? html`<p class="swap-from">🎯 Выбор · второй вариант был «${other.name}»</p>`
     : html`<div class="stack-4"><p class="swap-from">🎯 Упражнение ${i + 1} из ${total} · можно поменять до первого подхода</p>${tiles}</div>`;
   return exerciseCard(ex, date, state, editable, mode, catalog, allin, head, base);
+}
+
+// Эффективность варианта: 100% — полная цена, ниже — брал его подряд.
+function effChip(o) {
+  const off = 100 - (o.eff ?? 100);
+  return off > 0
+    ? html`<span class="eff eff-down">Эффективность −${off}%</span><span class="label">брал ${o.times} ${plural(o.times, 'раз', 'раза', 'раз')} подряд</span>`
+    : html`<span class="eff">Эффективность 100%</span>`;
+}
+
+// Сколько стоит упражнение по цене места: всё в цель, один подход, потолок сверх цели.
+function priceLine(ex) {
+  const off = 100 - (ex.eff ?? 100);
+  const top = Math.round(ex.price * PLACE_CAP);
+  return html`<p class="price-line">💰 <b>${ex.price}</b> за всё в цель${off > 0
+    ? html` · <span class="eff eff-down">эффективность −${off}%</span>` : ''}<br>
+    <span class="label">Подход в цель — ${Math.round(ex.price / ex.sets)}, сверх цели — до +${top} за день (максимум ${ex.price + top})</span></p>`;
 }
 
 // Кнопка справочника: на иконке — человечек в приседе.
@@ -255,7 +275,8 @@ function exerciseCard(ex, date, state, editable, mode, catalog, allin, head = ''
       <div class="row"><h2 class="h2">${ex.name}</h2><span class="row-gap">${bet ? html`<span class="chip allin-bet">${ALLIN_STATE[bet.state].icon} ${
         bet.state === 'done' ? `+${allin.up}` : bet.state === 'miss' ? `−${allin.down}` : `+${allin.up} / −${allin.down}`}</span>` : ''}
         <button type="button" class="gd-q" data-guide-ex="${ex.id}" aria-label="Как делать: ${ex.name}">?</button></span></div>
-      <p class="label">${goalText(ex, unit)}</p></div>
+      <p class="label">${goalText(ex, unit)}</p>
+      ${ex.price != null ? priceLine(ex) : ''}</div>
     ${sets.map((n) => {
       const key = `${ex.id}-${n}`;
       const log = state.logs.get(key);
