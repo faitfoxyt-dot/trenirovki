@@ -712,13 +712,14 @@ export const api = {
     replanToday(old);
   },
 
-  // Пробный «Выбор»: друг сам берёт один из двух вариантов (i — номер пункта плана, k — 0 или 1).
+  // Пробный «Выбор»: друг сам берёт один из двух вариантов (i — номер пункта плана, k — 0 или 1). Один раз, без отмены.
   async chooseExercise(date, i, k) {
     needAthlete();
     if (date !== today()) fail('Выбрать можно только на сегодня');
     const d = findDay(current.id, date);
     const x = d?.plan?.[i];
     if (d?.status !== 'training' || !x?.pick?.[k]) fail('Тут нечего выбирать');
+    if (x.chosen != null) fail('Выбор уже подтверждён');
     if (pickLocked(x, db.logs.filter((l) => l.athlete_id === current.id && l.date === date))) fail('Подход уже отмечен — выбор не поменять');
     const o = x.pick[k];
     d.plan[i] = { ...x, id: o.id, name: o.name, unit: o.unit, target_reps: o.target_reps, chosen: k,
