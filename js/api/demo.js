@@ -100,8 +100,9 @@ function complexIndex(a, date) {
   return (((db.settings.rotation_shift ?? 0) + k) % n + n) % n;
 }
 
-// Сколько раз подряд друг брал этот вариант в этом месте: идём по прошлым дням назад,
-// где было место с той же парой; не выбрал ничего — день не считаем, взял другой — цепочка кончилась.
+// Сколько раз подряд друг брал этот вариант в этом месте — как choice_times в базе: идём по прошлым дням назад,
+// где было место с той же парой. Не выбрал и ничего не отметил — день не считаем; не выбрал, но отмечал —
+// это первый вариант; взял другой — цепочка кончилась.
 function choiceTimes(a, date, pair, id) {
   const key = [...pair].sort((x, y) => x - y).join('-');
   const days = db.days.filter((d) => d.athlete_id === a && d.date < date && d.plan)
@@ -109,8 +110,12 @@ function choiceTimes(a, date, pair, id) {
   let n = 0;
   for (const d of days) {
     const x = d.plan.find((y) => y.pick && y.pick.map((o) => o.id).sort((p, q) => p - q).join('-') === key);
-    if (!x || x.chosen === null || x.chosen === undefined) continue;
-    if (x.pick[x.chosen].id !== id) break;
+    if (!x) continue;
+    let took = null;
+    if (x.chosen !== null && x.chosen !== undefined) took = x.pick[x.chosen].id;
+    else if (db.logs.some((l) => l.athlete_id === a && l.date === d.date && l.exercise_id === x.id && l.claimed != null)) took = x.id;
+    if (took === null) continue;
+    if (took !== id) break;
     n += 1;
   }
   return n;
