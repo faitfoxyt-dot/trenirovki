@@ -814,7 +814,8 @@ export const api = {
   // Подходы, которые бот подтвердил по видео (сегодня и вчера) — админ может отменить.
   async videoConfirmed() {
     needAdmin();
-    const from = addDays(today(), -1);
+    // Вчерашние — только до 03:00, потом в блоке остаются сегодняшние.
+    const from = clock().grace ? addDays(today(), -1) : today();
     return clone(db.logs.filter((l) => l.auto && l.date >= from)
       .sort((a, b) => b.date.localeCompare(a.date) || a.id - b.id));
   },
