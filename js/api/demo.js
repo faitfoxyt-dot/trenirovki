@@ -2,14 +2,14 @@
 // в памяти вкладки. Правила дня и очков повторяют SQL-функции из supabase/migrations.
 
 import { addDays, isoDow, tallinnNow, shortDate, WD_SHORT } from '../util.js';
-import { swapItems as planSwaps, pickLocked, choiceIds, setNumber, choicePrice, choiceEff, placeSetPoints } from '../logic.js';
+import { swapItems as planSwaps, pickLocked, choiceIds, setNumber, choicePrice, choiceTop, choiceEff, placeSetPoints } from '../logic.js';
 
 const ADMIN = { id: 'admin', role: 'admin', name: 'Тимур' };
 const ATHLETE = { id: 'athlete', role: 'athlete', name: 'Друг' };
 
 const RULE_KEYS = ['calibration', 'per_exercise', 'streak_from', 'streak_step', 'streak_max',
   'miss_penalty_pct', 'rest_day_price', 'purchase_limit_week', 'phone_price',
-  'allin_price', 'allin_up', 'allin_down', 'allin_limit_week', 'choice_price', 'choice_drop', 'choice_floor'];
+  'allin_price', 'allin_up', 'allin_down', 'allin_limit_week', 'choice_price', 'choice_max', 'choice_drop', 'choice_floor'];
 
 // Строка каталога: swap — замена по просьбе (id) и её цель.
 const ex = (id, name, sets, target, swap = null, swapTarget = null, unit = 'reps') => ({
@@ -131,11 +131,11 @@ function currentPlan(a, date) {
     const main = opt(x.id, x.target_reps);
     if (!main) return null;
     const alt = db.settings.choice && x.alt ? opt(x.alt.id, x.alt.target_reps) : null;
-    if (!alt) return { ...main, sets: x.sets, ...(priced ? { price: choicePrice(r), times: 0, eff: 100 } : {}) };
+    if (!alt) return { ...main, sets: x.sets, ...(priced ? { price: choicePrice(r), top: choiceTop(r), times: 0, eff: 100 } : {}) };
     const pick = [main, alt].map((o) => {
       if (!priced) return o;
       const times = choiceTimes(a, date, [main.id, alt.id], o.id);
-      return { ...o, price: choicePrice(r, times), times, eff: choiceEff(r, times) };
+      return { ...o, price: choicePrice(r, times), top: choiceTop(r, times), times, eff: choiceEff(r, times) };
     });
     return { ...pick[0], sets: x.sets, pick, chosen: null };
   }).filter(Boolean);
@@ -309,7 +309,7 @@ function awardSet(l) {
     const other = (cal ? db.theory : db.logs)
       .filter((x) => x.athlete_id === l.athlete_id && x.date === l.date && x.exercise_id === l.exercise_id && (x.set_id ?? x.id) !== l.id)
       .reduce((s, x) => s + (x.bonus ?? 0), 0);
-    const p = placeSetPoints(ex.price, ex.sets, target, l.confirmed, other);
+    const p = placeSetPoints(ex.price, ex.top, ex.sets, target, l.confirmed, other);
     bon = p.bonus;
     mult = streakMult(r, dayStreak(l.athlete_id, l.date));
     total = Math.round((p.base + bon) * mult);
@@ -501,8 +501,8 @@ function setStatus(a, date, status) {
     streak_from: 3, streak_step: 0.1, streak_max: 1.5,
     miss_penalty_pct: 10, rest_day_price: 150, purchase_limit_week: 2, phone_price: 4000,
     allin_price: 30, allin_up: 0.3, allin_down: 0.7, allin_limit_week: 1 });
-  // Цена места при «Выборе» — с сегодняшнего дня (концепт): 1000 за упражнение, повтор того же −10%, не ниже 50%.
-  db.rules.push({ ...db.rules[db.rules.length - 1], valid_from: T, choice_price: 1000, choice_drop: 10, choice_floor: 50 });
+  // Цена места при «Выборе» — с сегодняшнего дня (концепт): 800 за всё в цель, максимум 1100, повтор того же −10%, не ниже 50%.
+  db.rules.push({ ...db.rules[db.rules.length - 1], valid_from: T, choice_price: 800, choice_max: 1100, choice_drop: 10, choice_floor: 50 });
 
   let j = 0; // номер тренировочного дня
   const log = (date, ex, n, claimed, video = true) => {
@@ -600,7 +600,7 @@ function setStatus(a, date, status) {
   // Первое место (подтягивания или тяга) друг ещё не выбрал, во втором взял сгибания, в третьем лодочку.
   [[1, 1], [2, 0]].forEach(([i, k]) => { const x = day.plan[i]; const o = x.pick[k];
     day.plan[i] = { ...x, id: o.id, name: o.name, unit: o.unit, target_reps: o.target_reps, chosen: k,
-      ...(o.price != null ? { price: o.price, times: o.times, eff: o.eff } : {}) }; });
+      ...(o.price != null ? { price: o.price, top: o.top, times: o.times, eff: o.eff } : {}) }; });
   [[day.plan[1].id, 1, 15], [day.plan[1].id, 2, 16], [day.plan[2].id, 1, 15]].forEach(([id, n, r], i) => {
     const row = { id: seq++, athlete_id: a, date: T, exercise_id: id, set_no: n, claimed: r, has_video: false,
       review: 'pending', confirmed: null, comment: null, points: null, bonus: null };
@@ -717,7 +717,7 @@ export const api = {
     if (pickLocked(x, db.logs.filter((l) => l.athlete_id === current.id && l.date === date))) fail('Подход уже отмечен — выбор не поменять');
     const o = x.pick[k];
     d.plan[i] = { ...x, id: o.id, name: o.name, unit: o.unit, target_reps: o.target_reps, chosen: k,
-      ...(o.price != null ? { price: o.price, times: o.times, eff: o.eff } : {}) };
+      ...(o.price != null ? { price: o.price, top: o.top, times: o.times, eff: o.eff } : {}) };
     return clone(d);
   },
 
@@ -996,7 +996,7 @@ export const api = {
       d.plan = d.plan.map((x) => {
         const i = items.find((y) => y.from.id === x.id);
         // При цене места замена стоит ¾ того, что стоило упражнение.
-        return i ? { ...i.to, from: x, ...(x.price != null ? { price: Math.round(x.price * 0.75), times: 0, eff: Math.round((x.eff ?? 100) * 0.75) } : {}) } : x;
+        return i ? { ...i.to, from: x, ...(x.price != null ? { price: Math.round(x.price * 0.75), top: Math.round((x.top ?? x.price) * 0.75), times: 0, eff: Math.round((x.eff ?? 100) * 0.75) } : {}) } : x;
       });
     }
     s.status = approve ? 'approved' : 'declined';

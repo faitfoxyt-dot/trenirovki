@@ -206,9 +206,10 @@ export function swapItems(plan, logs, catalog, ids = null) {
   });
 }
 
-// Цена места при «Выборе»: каждое упражнение стоит одинаково (choice_price за все подходы в цель).
-// Эффективность: берёт то же самое подряд — каждый раз минус choice_drop % от цены (−10%, −20%, …),
-// но не ниже choice_floor %. Где выбора нет — 100%. null — цены места нет, очки по «Правилам» упражнения.
+// Цена места при «Выборе»: каждое упражнение стоит одинаково — choice_price за все подходы в цель,
+// со сверх цели — не больше choice_max. Эффективность: берёт то же самое подряд — каждый раз минус choice_drop %
+// (−10%, −20%, …), но не ниже choice_floor %; на неё умножаются обе цифры. Где выбора нет — 100%.
+// null — цены места нет, очки по «Правилам» упражнения.
 export function choiceEff(r, times = 0) {
   const drop = Number(r?.choice_drop ?? 0);
   const floor = Number(r?.choice_floor ?? 0);
@@ -219,19 +220,23 @@ export function choicePrice(r, times = 0) {
   if (!(base > 0)) return null;
   return Math.round((base * choiceEff(r, times)) / 100);
 }
+export function choiceTop(r, times = 0) {
+  const price = choicePrice(r, times);
+  if (price === null) return null;
+  const top = Number(r.choice_max);
+  return top > 0 ? Math.max(price, Math.round((top * choiceEff(r, times)) / 100)) : price;
+}
 // Цепочка цен подряд: 1000 → 900 → 800 → …
 export const choiceChain = (r, n = 5) => Array.from({ length: n }, (_, i) => choicePrice(r, i));
 
 // Очки за подход по цене места — как place_points в базе (до множителя серии).
-// Подход в цель — цена / подходы; меньше цели — по доле; сверх цели — полцены повтора за каждый лишний,
-// но за день по упражнению не больше 10% цены. other — бонус других подходов этого упражнения за день.
-export const PLACE_OVER = 0.5;
-export const PLACE_CAP = 0.1;
-export function placeSetPoints(price, sets, target, reps, other = 0) {
+// Подход в цель — цена / подходы; меньше цели — по доле; каждый повтор сверх цели стоит как повтор в цель,
+// но за день по упражнению вместе не больше top. other — бонус других подходов этого упражнения за день.
+export function placeSetPoints(price, top, sets, target, reps, other = 0) {
   const per = price / Math.max(sets, 1);
   if (!(reps > 0)) return { base: 0, bonus: 0 };
   const base = !target || reps >= target ? per : (per * reps) / target;
-  const raw = target && reps > target ? ((reps - target) * per * PLACE_OVER) / target : 0;
-  const bonus = Math.max(0, Math.min(Math.round(raw), Math.round(price * PLACE_CAP) - other));
+  const raw = target && reps > target ? ((reps - target) * per) / target : 0;
+  const bonus = Math.max(0, Math.min(Math.round(raw), (top ?? price) - price - other));
   return { base: Math.round(base), bonus };
 }
