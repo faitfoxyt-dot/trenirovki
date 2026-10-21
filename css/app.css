@@ -609,6 +609,9 @@ i.cx-h { width: 12px; height: 12px; display: inline-block; border-radius: 3px; }
 .pick-on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .pick-name { font-weight: 600; font-size: 15px; line-height: 1.25; }
 .pick-mark { margin-top: auto; font-size: 12px; font-weight: 600; color: var(--accent); }
+.eff { font-size: 12px; font-weight: 600; color: var(--ok, var(--accent)); }
+.eff-down { color: var(--warn); }
+.price-line { margin: 2px 0 0; font-size: 14px; line-height: 1.4; }
 .alt-box { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px dashed var(--accent); border-radius: 12px; }
 .alt-or { margin: 0; font-size: 13px; font-weight: 600; color: var(--accent); }
 .choice-switch .chip { margin-left: 6px; }
