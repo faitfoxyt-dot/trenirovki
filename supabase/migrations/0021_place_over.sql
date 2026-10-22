@@ -1,6 +1,7 @@
 -- Трекер тренировок · 0021: сверх цели при цене места.
 -- Раньше каждый повтор сверх цели стоил как повтор в цель, и большой перевыполненный подход сразу добирал максимум.
 -- Теперь весь бонус (top − price, при 800/1000 это +200) дают +25% к цели в каждом подходе, меньше — по доле.
+-- Один подход не берёт больше своей доли бонуса ((top − price) / подходы), чтобы одинаковые подходы стоили одинаково.
 -- Остальное как в 0018. Повторный запуск безопасен.
 
 create or replace function public.award_set(p_id bigint) returns void
@@ -51,7 +52,7 @@ begin
     end if;
     if price is not null then
       -- Цена места: подход в цель — цена / подходы, меньше — по доле. Сверх цели: +25% к цели в каждом подходе
-      -- дают всю разницу top − price, меньше — по доле; за день по упражнению не выше top.
+      -- дают всю разницу top − price, меньше — по доле; подход не больше своей доли, за день по упражнению не выше top.
       per := price / greatest(coalesce((ex ->> 'sets')::int, 1), 1);
       if l.confirmed > 0 then
         base := round(case when target is null or l.confirmed >= target then per else per * l.confirmed / target end);
@@ -59,6 +60,8 @@ begin
           bon := greatest(0, least(
             round((l.confirmed - target) * (coalesce((ex ->> 'top')::numeric, price) - price)
                   / (greatest(coalesce((ex ->> 'sets')::int, 1), 1) * target * 0.25))::int,
+            round((coalesce((ex ->> 'top')::numeric, price) - price)
+                  / greatest(coalesce((ex ->> 'sets')::int, 1), 1))::int,
             coalesce((ex ->> 'top')::int, price::int) - price::int - other));
         end if;
       end if;

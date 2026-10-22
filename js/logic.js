@@ -231,7 +231,7 @@ export const choiceChain = (r, n = 5) => Array.from({ length: n }, (_, i) => cho
 
 // Очки за подход по цене места — как award_set в базе (до множителя серии).
 // Подход в цель — цена / подходы; меньше цели — по доле. Сверх цели: +PLACE_OVER (25%) к цели в каждом подходе
-// дают весь бонус (top − price), меньше — по доле; за день по упражнению не больше top.
+// дают весь бонус (top − price), меньше — по доле; подход не больше своей доли, за день по упражнению не больше top.
 // other — бонус других подходов этого упражнения за день.
 export const PLACE_OVER = 0.25;
 export function placeSetPoints(price, top, sets, target, reps, other = 0) {
@@ -241,6 +241,6 @@ export function placeSetPoints(price, top, sets, target, reps, other = 0) {
   const base = !target || reps >= target ? per : (per * reps) / target;
   const extra = (top ?? price) - price;
   const raw = target && reps > target ? ((reps - target) * extra) / (n * target * PLACE_OVER) : 0;
-  const bonus = Math.max(0, Math.min(Math.round(raw), (top ?? price) - price - other));
+  const bonus = Math.max(0, Math.min(Math.round(raw), Math.round(extra / n), extra - other));
   return { base: Math.round(base), bonus };
 }
