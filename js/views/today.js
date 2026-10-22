@@ -159,7 +159,7 @@ function pickCard(ex, i, total, date, state, editable, mode, catalog, allin, log
       data-pick="${k}" aria-pressed="false" ${can ? '' : html`disabled`}>
       <span class="pick-name">${o.name}</span>
       <span class="label">${goalText({ sets: ex.sets, target_reps: o.target_reps }, unitOf(o, catalog))}</span>
-      ${o.price != null ? effChip(o) : ''}
+      ${o.eff != null ? effChip(o) : ''}
     </button>`)}</div>`;
     return html`<section class="card pick-card">
       <p class="swap-from">🎯 Упражнение ${i + 1} из ${total} · выбери одно</p>
@@ -167,7 +167,7 @@ function pickCard(ex, i, total, date, state, editable, mode, catalog, allin, log
       ${can ? html`<button type="button" class="btn" data-confirm data-i="${i}" disabled>Выбери вариант</button>` : ''}
       <div class="gd-links">📖 Как делать: ${ex.pick.map((o, k) => html`${k ? ' · ' : ''}<button type="button" data-guide-ex="${o.id}">${o.name}</button>`)}</div>
       ${isAdmin ? html`<p class="label">Друг ещё не выбрал.</p>` : !can ? html`<p class="label">Выбор не сделан.</p>`
-        : i === state.firstPick ? html`<p class="label">${ex.pick[0].price != null
+        : i === state.firstPick ? html`<p class="label">${ex.pick[0].eff != null
           ? 'Все упражнения стоят одинаково. Берёшь одно и то же подряд — эффективность каждый раз −10%. Возьмёшь другое — снова 100%. '
           : ''}Выбери вариант и нажми «Подтвердить» — поменять потом нельзя.</p>` : ''}
     </section>`;
@@ -276,7 +276,7 @@ function exerciseCard(ex, date, state, editable, mode, catalog, allin, head = ''
         bet.state === 'done' ? `+${allin.up}` : bet.state === 'miss' ? `−${allin.down}` : `+${allin.up} / −${allin.down}`}</span>` : ''}
         <button type="button" class="gd-q" data-guide-ex="${ex.id}" aria-label="Как делать: ${ex.name}">?</button></span></div>
       <p class="label">${goalText(ex, unit)}</p>
-      ${ex.price != null ? html`<p class="price-line">⚡ ${effChip(ex)}</p>` : ''}</div>
+      ${ex.eff != null ? html`<p class="price-line">⚡ ${effChip(ex)}</p>` : ''}</div>
     ${sets.map((n) => {
       const key = `${ex.id}-${n}`;
       const log = state.logs.get(key);

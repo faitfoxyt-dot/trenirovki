@@ -2,24 +2,23 @@
 // Админ меняет — действует сразу. Атлет видит только чтение, если Тимур включил показ.
 
 import { html } from '../util.js';
-import { POINTS, signed, amount, isSec, cxLetter, unitText } from '../logic.js';
+import { POINTS, signed, amount, isSec, cxLetter, unitText, ruleSetPoints } from '../logic.js';
 import { howItWorks } from './goal.js';
 
 // Числа у каждого упражнения свои.
 // У упражнений на время те же поля, только за секунду.
 const PER_EX = [
-  { k: 'rep', label: 'За повтор', sec: 'За секунду', step: 0.1 },
-  { k: 'set', label: 'За полный подход', step: 0.1 },
-  { k: 'over', label: 'Сверх цели, за повтор', sec: 'Сверх цели, за секунду', step: 0.1 },
-  { k: 'cap', label: 'Потолок бонуса в день (очки)', int: true },
+  { k: 'rep', label: 'За повтор до цели', sec: 'За секунду до цели', step: 0.1 },
+  { k: 'over', label: 'За повтор сверх цели', sec: 'За секунду сверх цели', step: 0.1 },
+  { k: 'cap', label: 'Сверх цели в подходе, максимум повторов', sec: 'Сверх цели в подходе, максимум секунд', int: true },
 ];
 const fieldLabel = (f, unit) => (isSec(unit) && f.sec ? f.sec : f.label);
+// Дробные показываем через запятую, как их удобнее вписывать.
+const comma = (v) => (v === null || v === undefined ? '' : String(v).replace('.', ','));
 
 // int — целое число в базе; иначе можно дробное (шаг step).
 const GROUPS = [
-  { title: '🎯 Выбор упражнения', note: 'Работает, когда в «Плане» включён «Выбор упражнения». Тогда все упражнения стоят одинаково: все подходы в цель — первая цифра, меньше цели — по доле. Сверх цели: +50% к цели в подходе дают его долю разницы до максимума (при 2 подходах +100 из 200), меньше — по доле. Берёт одно и то же подряд — эффективность каждый раз падает на «минус за повтор»: 100% → 90% → 80% → … но не ниже порога; обе цифры умножаются на неё. Возьмёт другой вариант — снова 100%. Где выбора нет, всегда 100%. Замена по просьбе — 75%. Друг видит только эффективность в %, без очков. Цены упражнений выше тогда не действуют. Пустая цена — всё по ценам упражнений.', fields: [
-    { k: 'choice_price', label: 'Очков за всё в цель', int: true, min: 1 },
-    { k: 'choice_max', label: 'Максимум со сверх цели', int: true, min: 1 },
+  { title: '🎯 Выбор упражнения', note: 'Работает, когда в «Плане» включён «Выбор упражнения». Очки — по ценам упражнений выше. Берёт одно и то же подряд — эффективность каждый раз падает на «минус за повтор»: 100% → 90% → 80% → … но не ниже порога; все очки подхода умножаются на неё. Возьмёт другой вариант — снова 100%. Где выбора нет, всегда 100%. Друг видит только эффективность в %, без очков.', fields: [
     { k: 'choice_drop', label: 'Минус за повтор выбора, %', int: true, max: 50 },
     { k: 'choice_floor', label: 'Не ниже, % цены', int: true, max: 100 },
   ] },
@@ -101,8 +100,8 @@ export async function render(el, ctx, args, alive) {
 
     <section class="card">
       <h2 class="h2">Упражнения и очки</h2>
-      <p class="label">Очки идут за подходы, которые проверил генерал. «Полный подход» — когда добил цель.
-        «Сверх цели» — доплата за каждый лишний повтор (или секунду у упражнений на время), но за день по упражнению бонус не больше потолка. Потолок — в очках, не в повторах.
+      <p class="label">Очки идут за подходы, которые проверил генерал. Повторы до цели — по первой цене, сверх цели — по второй,
+        но в каждом подходе сверх цели считается не больше максимума (у упражнений на время всё в секундах). Дробные можно через запятую.
         ${isAdmin ? 'Отсюда упражнения попадают в «План». Выбери упражнение, чтобы поменять очки и замену, или добавь новое.' : ''}</p>
       <div id="ex-rules"></div>
     </section>
@@ -110,8 +109,8 @@ export async function render(el, ctx, args, alive) {
     ${GROUPS.map((g) => html`<section class="card">
       <h2 class="h2">${g.title}</h2>
       ${g.fields.map((f) => html`<label class="row rule-row" for="r-${f.k}"><span>${f.label}</span>
-        <input class="input num-in" id="r-${f.k}" data-k="${f.k}" type="number" inputmode="decimal"
-          min="${f.min ?? 0}" ${f.max ? html`max="${f.max}"` : ''} step="${f.int ? 1 : f.step}" placeholder="—" value="${next[f.k] ?? ''}" ${ro}></label>`)}
+        <input class="input num-in" id="r-${f.k}" data-k="${f.k}" type="text" inputmode="decimal"
+          placeholder="—" value="${comma(next[f.k])}" ${ro}></label>`)}
       ${g.note ? html`<p class="label">${g.note}</p>` : ''}
     </section>`)}
 
@@ -126,7 +125,7 @@ export async function render(el, ctx, args, alive) {
   `);
 
   const num = (input, f) => {
-    const raw = input.value.trim().replace(',', '.');
+    const raw = input.value.trim().replace(/\s/g, '').replace(',', '.');
     if (raw === '') return { v: null, ok: true };
     const v = Number(raw);
     return { v, ok: Number.isFinite(v) && v >= (f.min ?? 0) && v <= (f.max ?? Infinity) && (!f.int || Number.isInteger(v)) };
@@ -157,9 +156,10 @@ export async function render(el, ctx, args, alive) {
       ${cxTarget(e) ? html`<p class="label">Цель — в «Плане»: ${cxTarget(e).text}</p>` : ''}
       <div class="grid-2">${PER_EX.map((f) => html`<div class="field">
         <label class="label" for="p-${keyOf(e)}-${f.k}">${fieldLabel(f, e.unit)}</label>
-        <input class="input num-in" id="p-${keyOf(e)}-${f.k}" data-pk="${f.k}" type="number" inputmode="decimal"
-          min="0" step="${f.int ? 1 : f.step}" placeholder="—" value="${e.pts?.[f.k] ?? ''}" ${ro}></div>`)}
+        <input class="input num-in" id="p-${keyOf(e)}-${f.k}" data-pk="${f.k}" type="text" inputmode="decimal"
+          placeholder="—" value="${comma(e.pts?.[f.k])}" ${ro}></div>`)}
       </div>
+      ${costLine(e)}
       ${!hasSwap ? '' : isAdmin ? swapRow(e) : swapText(e)}
     </div>`;
 
@@ -206,10 +206,19 @@ export async function render(el, ctx, args, alive) {
     const it = cxItem(complexes[i], e.id);
     return { target: it.target_reps, text: `${complexes.length > 1 ? `комплекс ${cxLetter(i)}, ` : ''}${it.sets}×${amount(it.target_reps, e.unit)}` };
   };
+  // Цены упражнения числами: в полях может быть «5,7».
+  const ptsOf = (e) => Object.fromEntries(PER_EX.map((f) => [f.k, num({ value: String(e.pts?.[f.k] ?? '') }, f).v ?? undefined]));
   // Сколько стоит подход ровно в цель (без бонуса и серии).
-  const setCost = (e, target) => {
-    const n = (k) => Number(String(e.pts?.[k] ?? '').replace(',', '.')) || 0;
-    return target ? Math.round(target * n('rep') + n('set')) : null;
+  const setCost = (e, target) => (target ? Math.round(ruleSetPoints(ptsOf(e), target, target).base) : null);
+  // Подход в цель и подход с максимумом сверх цели — по цели из «Плана».
+  const costLine = (e) => {
+    const t = cxTarget(e)?.target;
+    if (!t) return '';
+    const p = ptsOf(e);
+    const top = p.cap != null ? t + p.cap : null;
+    const best = top ? ruleSetPoints(p, t, top) : null;
+    return html`<p class="label">Подход в цель (${amount(t, e.unit)}) — ${POINTS(setCost(e, t))}${
+      best ? html` · ${amount(top, e.unit)} и больше — ${POINTS(Math.round(best.base + best.bonus))}` : ''}</p>`;
   };
   // Замена по просьбе: другое упражнение из списка, цель для него и сравнение очков.
   const swapRow = (e) => {
@@ -321,12 +330,11 @@ export async function render(el, ctx, args, alive) {
     const box = el.querySelector('#example');
     const ex = exercises.find((e) => v.per_exercise[keyOf(e)]) ?? exercises[0];
     const p = ex ? v.per_exercise[keyOf(ex)] ?? {} : {};
-    if (!ex || !(p.rep || p.set)) { box.textContent = 'Впиши очки хотя бы одному упражнению — здесь появится пример.'; return; }
+    if (!ex || !p.rep) { box.textContent = 'Впиши очки хотя бы одному упражнению — здесь появится пример.'; return; }
     const sec = isSec(ex.unit);
-    const target = ex.target_reps ?? (sec ? 60 : 8);
+    const target = cxTarget(ex)?.target ?? ex.target_reps ?? (sec ? 60 : 8);
     const reps = target + (sec ? 10 : 2);
-    const base = reps * (p.rep ?? 0) + (p.set ?? 0);
-    const over = p.over ? Math.min(Math.round((reps - target) * p.over), p.cap ?? Infinity) : 0;
+    const { base, bonus: over } = ruleSetPoints(p, target, reps);
     const top = v.streak_from && v.streak_step ? v.streak_max ?? null : null;
     box.textContent = `${ex.name}, подход ${sec ? amount(reps, 'sec') : `${reps} повторов`} при цели ${amount(target, ex.unit)}: ${POINTS(Math.round(base + over))}`
       + (over ? ` (из них ${signed(Math.round(over))} за ${sec ? 'секунды' : 'повторы'} сверх цели)` : '')
