@@ -230,10 +230,10 @@ export function choiceTop(r, times = 0) {
 export const choiceChain = (r, n = 5) => Array.from({ length: n }, (_, i) => choicePrice(r, i));
 
 // Очки за подход по цене места — как award_set в базе (до множителя серии).
-// Подход в цель — цена / подходы; меньше цели — по доле. Сверх цели: +PLACE_OVER (25%) к цели в каждом подходе
+// Подход в цель — цена / подходы; меньше цели — по доле. Сверх цели: +PLACE_OVER (50%) к цели в каждом подходе
 // дают весь бонус (top − price), меньше — по доле; подход не больше своей доли, за день по упражнению не больше top.
 // other — бонус других подходов этого упражнения за день.
-export const PLACE_OVER = 0.25;
+export const PLACE_OVER = 0.5;
 export function placeSetPoints(price, top, sets, target, reps, other = 0) {
   const n = Math.max(sets, 1);
   const per = price / n;
