@@ -215,12 +215,13 @@ export function choiceEff(r, times = 0) {
 }
 
 // Очки за подход по «Правилам» упражнения — как award_set в базе (до множителя серии).
-// rep — за каждый повтор до цели, over — за повтор сверх цели, cap — сколько повторов сверх цели
-// в подходе считается. У упражнений на время всё в секундах. eff — эффективность при «Выборе», %.
+// price — за подход ровно в цель, меньше цели — по доле. bonus — максимум сверх цели: весь, если сверх цели
+// сделано extra повторов (секунд), меньше — по доле. eff — эффективность при «Выборе», %.
 export function ruleSetPoints(pe, target, reps, eff = 100) {
   if (!(reps > 0)) return { base: 0, bonus: 0 };
   const k = eff / 100;
-  const base = Math.min(reps, target ?? reps) * (pe?.rep ?? 0) * k;
-  const over = target != null && reps > target ? Math.min(reps - target, pe?.cap ?? Infinity) : 0;
-  return { base, bonus: Math.round(over * (pe?.over ?? 0) * k) };
+  const price = pe?.price ?? 0;
+  const base = (target ? (price * Math.min(reps, target)) / target : price) * k;
+  const over = target && reps > target && pe?.extra > 0 ? Math.min(reps - target, pe.extra) / pe.extra : 0;
+  return { base, bonus: Math.round((pe?.bonus ?? 0) * over * k) };
 }

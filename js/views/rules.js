@@ -8,9 +8,9 @@ import { howItWorks } from './goal.js';
 // Числа у каждого упражнения свои.
 // У упражнений на время те же поля, только за секунду.
 const PER_EX = [
-  { k: 'rep', label: 'За повтор до цели', sec: 'За секунду до цели', step: 0.1 },
-  { k: 'over', label: 'За повтор сверх цели', sec: 'За секунду сверх цели', step: 0.1 },
-  { k: 'cap', label: 'Сверх цели в подходе, максимум повторов', sec: 'Сверх цели в подходе, максимум секунд', int: true },
+  { k: 'price', label: 'Очков за подход в цель', int: true },
+  { k: 'bonus', label: 'Сверх цели, максимум очков', int: true },
+  { k: 'extra', label: 'Для максимума сверх цели, повторов', sec: 'Для максимума сверх цели, секунд', int: true },
 ];
 const fieldLabel = (f, unit) => (isSec(unit) && f.sec ? f.sec : f.label);
 // Дробные показываем через запятую, как их удобнее вписывать.
@@ -100,8 +100,8 @@ export async function render(el, ctx, args, alive) {
 
     <section class="card">
       <h2 class="h2">Упражнения и очки</h2>
-      <p class="label">Очки идут за подходы, которые проверил генерал. Повторы до цели — по первой цене, сверх цели — по второй,
-        но в каждом подходе сверх цели считается не больше максимума (у упражнений на время всё в секундах).${isAdmin ? ' Дробные можно через запятую. Подходы и цели — в «Плане».' : ''}</p>
+      <p class="label">Очки идут за подходы, которые проверил генерал. Подход ровно в цель — первая цифра, меньше цели — по доле.
+        Сверх цели — до второй цифры: вся, если сделал на третью цифру больше цели (у упражнений на время — секунд), меньше — по доле.${isAdmin ? ' Подходы и цели — в «Плане».' : ''}</p>
       <div id="ex-rules"></div>
     </section>
 
@@ -158,7 +158,7 @@ export async function render(el, ctx, args, alive) {
         : html`<p class="label">${cxTarget(e) ? `Цель в «Плане»: ${cxTarget(e).text}` : 'Пока нет в комплексах — добавь в «Плане».'}</p>`}
       ${PER_EX.map((f) => html`<div class="field">
         <label class="label" for="p-${keyOf(e)}-${f.k}">${fieldLabel(f, e.unit)}</label>
-        <input class="input num-in" id="p-${keyOf(e)}-${f.k}" data-pk="${f.k}" type="text" inputmode="decimal"
+        <input class="input num-in" id="p-${keyOf(e)}-${f.k}" data-pk="${f.k}" type="text" inputmode="numeric"
           placeholder="—" value="${comma(e.pts?.[f.k])}" ${ro}></div>`)}
       ${costLine(e)}
     </div>`;
@@ -186,7 +186,7 @@ export async function render(el, ctx, args, alive) {
     const it = cxItem(complexes[i], e.id);
     return { target: it.target_reps, text: `${complexes.length > 1 ? `комплекс ${cxLetter(i)}, ` : ''}${it.sets}×${amount(it.target_reps, e.unit)}` };
   };
-  // Цены упражнения числами: в полях может быть «5,7».
+  // Цены упражнения числами.
   const ptsOf = (e) => Object.fromEntries(PER_EX.map((f) => [f.k, num({ value: String(e.pts?.[f.k] ?? '') }, f).v ?? undefined]));
   // Сколько стоит подход ровно в цель (без бонуса и серии).
   const setCost = (e, target) => (target ? Math.round(ruleSetPoints(ptsOf(e), target, target).base) : null);
@@ -195,7 +195,7 @@ export async function render(el, ctx, args, alive) {
     const t = cxTarget(e)?.target;
     if (!t) return '';
     const p = ptsOf(e);
-    const top = p.cap != null ? t + p.cap : null;
+    const top = p.extra > 0 ? t + p.extra : null;
     const best = top ? ruleSetPoints(p, t, top) : null;
     return html`<p class="label">Подход в цель (${amount(t, e.unit)}) — ${POINTS(setCost(e, t))}${
       best ? html` · ${amount(top, e.unit)} и больше — ${POINTS(Math.round(best.base + best.bonus))}` : ''}</p>`;
@@ -279,7 +279,7 @@ export async function render(el, ctx, args, alive) {
     const box = el.querySelector('#example');
     const ex = exercises.find((e) => v.per_exercise[keyOf(e)]) ?? exercises[0];
     const p = ex ? v.per_exercise[keyOf(ex)] ?? {} : {};
-    if (!ex || !p.rep) { box.textContent = 'Впиши очки хотя бы одному упражнению — здесь появится пример.'; return; }
+    if (!ex || !p.price) { box.textContent = 'Впиши очки хотя бы одному упражнению — здесь появится пример.'; return; }
     const sec = isSec(ex.unit);
     const target = cxTarget(ex)?.target ?? ex.target_reps ?? (sec ? 60 : 8);
     const reps = target + (sec ? 10 : 2);

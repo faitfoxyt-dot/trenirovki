@@ -309,7 +309,7 @@ function awardSet(l) {
   let bon = 0;
   let mult = 1;
   if (ok) {
-    // Повторы до цели по цене повтора, сверх цели — по своей цене, но не больше лимита в подходе.
+    // Подход в цель — цена, меньше — по доле; сверх цели — до максимума, по доле от нужного перебора.
     // При «Выборе» всё умножается на эффективность.
     const p = ruleSetPoints(pe, target, l.confirmed, ex?.eff ?? 100);
     bon = p.bonus;
@@ -483,8 +483,7 @@ function setStatus(a, date, status) {
       [12, 15, 300], [13, 18, 300], [14, 25, 300], [15, 12, 300], [16, 90, 300], [17, 20, 300], [18, 8, 300],
       [19, 20, 300], [20, 60, 300],
     ].map(([id, t, k = 400]) => {
-      const cap = Math.ceil(t / 2);
-      return [id, { rep: Math.round((k / t) * 100) / 100, over: Math.round((k / 4 / cap) * 100) / 100, cap }];
+      return [id, { price: k, bonus: k / 4, extra: Math.ceil(t / 2) }];
     })),
     streak_from: 3, streak_step: 0.1, streak_max: 1.5,
     miss_penalty_pct: 10, rest_day_price: 4000, purchase_limit_week: 2, phone_price: 150000,
