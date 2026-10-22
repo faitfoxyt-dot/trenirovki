@@ -2,6 +2,7 @@
 -- У каждого упражнения в «Правилах»: rep — за повтор (секунду) до цели, over — за повтор (секунду) сверх цели,
 -- cap — сколько повторов (секунд) сверх цели в подходе считается. Бонуса за полный подход больше нет.
 -- «Выбор упражнения» больше не ставит цену места: в плане только times и eff, очки × eff.
+-- У второго варианта в комплексе свои подходы (alt.sets); выбранный вариант приносит их в план дня.
 -- Цены с 22.10: подход в цель — 400, максимум сверх цели +100 (замены по просьбе 300 и +75).
 -- Планы и правила до 22.10 считаются как раньше. Повторный запуск безопасен.
 
@@ -11,7 +12,7 @@ language sql immutable set search_path = public as $$
   select jsonb_build_object('times', coalesce(p_times, 0), 'eff', choice_eff(r, p_times))
 $$;
 
--- Как в 0018, только эффективность ставится при любом включённом «Выборе».
+-- Как в 0018, только эффективность ставится при любом включённом «Выборе», а у каждого варианта свои подходы.
 create or replace function public.current_plan(p_athlete uuid, p_date date) returns jsonb
 language sql stable security definer set search_path = public as $$
   with rr as (select rules_for(p_date) as rule),
@@ -28,11 +29,13 @@ language sql stable security definer set search_path = public as $$
   ),
   opts as (
     select i.*,
-      jsonb_build_object('id', (i.e).id, 'name', (i.e).name, 'unit', (i.e).unit, 'target_reps', (i.x ->> 'target_reps')::int)
+      jsonb_build_object('id', (i.e).id, 'name', (i.e).name, 'unit', (i.e).unit, 'target_reps', (i.x ->> 'target_reps')::int,
+                         'sets', (i.x ->> 'sets')::int)
         || case when i.priced then coalesce(choice_cost((select rule from rr),
              case when i.pick then choice_times(p_athlete, p_date, i.pair, (i.e).id) else 0 end), '{}') else '{}' end as o1,
       case when i.pick then
-        jsonb_build_object('id', (i.a).id, 'name', (i.a).name, 'unit', (i.a).unit, 'target_reps', (i.x -> 'alt' ->> 'target_reps')::int)
+        jsonb_build_object('id', (i.a).id, 'name', (i.a).name, 'unit', (i.a).unit, 'target_reps', (i.x -> 'alt' ->> 'target_reps')::int,
+                           'sets', coalesce((i.x -> 'alt' ->> 'sets')::int, (i.x ->> 'sets')::int))
         || case when i.priced then coalesce(choice_cost((select rule from rr),
              choice_times(p_athlete, p_date, i.pair, (i.a).id)), '{}') else '{}' end end as o2
     from items i
@@ -154,6 +157,99 @@ begin
   bal := balance_of(l.athlete_id);
   insert into ledger (athlete_id, date, kind, amount, rating, note, set_id)
   values (l.athlete_id, l.date, 'set', greatest(delta, -bal), delta, note, l.id);
+end $$;
+
+-- Как в 0019, плюс подходы выбранного варианта.
+create or replace function public.choose_exercise(p_date date, p_i int, p_k int) returns public.days
+language plpgsql security definer set search_path = public as $$
+declare
+  uid uuid := auth.uid();
+  d   public.days;
+  x   jsonb;
+  o   jsonb;
+begin
+  if uid is null then raise exception 'Нужно войти'; end if;
+  if p_date is distinct from app_today() then raise exception 'Выбрать можно только на сегодня'; end if;
+  perform lock_athlete(uid);
+  d := ensure_day(uid, p_date);
+  x := d.plan -> p_i;
+  o := x -> 'pick' -> p_k;
+  if d.status is distinct from 'training' or o is null or jsonb_typeof(o) <> 'object' then
+    raise exception 'Тут нечего выбирать';
+  end if;
+  if jsonb_typeof(x -> 'chosen') = 'number' then raise exception 'Выбор уже подтверждён'; end if;
+  if exists (select 1 from set_logs s where s.athlete_id = uid and s.date = p_date
+             and s.exercise_id = (x ->> 'id')::bigint and s.claimed is not null) then
+    raise exception 'Подход уже отмечен — выбор не поменять';
+  end if;
+  update days set
+    plan = jsonb_set(plan, array[p_i::text], (x - 'price' - 'top' - 'times' - 'eff') || jsonb_build_object(
+      'id', o -> 'id', 'name', o -> 'name', 'unit', o -> 'unit', 'target_reps', o -> 'target_reps', 'chosen', p_k,
+      'sets', coalesce(o -> 'sets', x -> 'sets'))
+      || jsonb_strip_nulls(jsonb_build_object('price', o -> 'price', 'top', o -> 'top', 'times', o -> 'times', 'eff', o -> 'eff'))),
+    updated_at = now()
+  where athlete_id = uid and date = p_date
+  returning * into d;
+  return d;
+end $$;
+
+-- Как в 0015, плюс у второго варианта свои подходы.
+create or replace function public.save_complexes(p_list jsonb, p_next int) returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  n   int;
+  old jsonb;
+begin
+  if not is_admin() then raise exception 'Только для админа'; end if;
+  if jsonb_typeof(p_list) <> 'array' or jsonb_array_length(p_list) not between 1 and 5 then
+    raise exception 'Комплексов — от 1 до 5';
+  end if;
+  n := jsonb_array_length(p_list);
+  if p_next is null or p_next not between 0 and n - 1 then raise exception 'Нет такого комплекса'; end if;
+  if exists (select 1 from jsonb_array_elements(p_list) c where jsonb_typeof(c) <> 'array') then
+    raise exception 'Комплекс — это список упражнений';
+  end if;
+  if exists (select 1 from jsonb_array_elements(p_list) c, jsonb_array_elements(c) x
+             where not exists (select 1 from exercises e where e.id = (x ->> 'id')::bigint and not e.archived)) then
+    raise exception 'В комплексе есть неизвестное упражнение';
+  end if;
+  if exists (select 1 from jsonb_array_elements(p_list) c, jsonb_array_elements(c) x
+             where coalesce((x ->> 'sets')::int, 0) not between 1 and 10
+                or ((x ->> 'target_reps') is not null and (x ->> 'target_reps')::int not between 1 and 1000)) then
+    raise exception 'Подходов — от 1 до 10, цель — от 1 до 1000';
+  end if;
+  if exists (select 1 from jsonb_array_elements(p_list) c, jsonb_array_elements(c) x
+             where jsonb_typeof(x -> 'alt') = 'object'
+               and (not exists (select 1 from exercises e where e.id = (x -> 'alt' ->> 'id')::bigint and not e.archived)
+                    or ((x -> 'alt' ->> 'target_reps') is not null and (x -> 'alt' ->> 'target_reps')::int not between 1 and 1000)
+                    or ((x -> 'alt' ->> 'sets') is not null and (x -> 'alt' ->> 'sets')::int not between 1 and 10))) then
+    raise exception 'Второй вариант: неизвестное упражнение, подходов не от 1 до 10 или цель не от 1 до 1000';
+  end if;
+  if exists (select 1 from jsonb_array_elements(p_list) with ordinality c(v, i), jsonb_array_elements(v) x,
+                    lateral (select x ->> 'id' union all select x -> 'alt' ->> 'id' where jsonb_typeof(x -> 'alt') = 'object') u(id)
+             group by i, u.id having count(*) > 1) then
+    raise exception 'Упражнение повторяется в одном комплексе';
+  end if;
+
+  old := plans_today();
+  update settings set
+    complexes = (select jsonb_agg(coalesce((select jsonb_agg(jsonb_build_object(
+                     'id', (x ->> 'id')::bigint, 'sets', (x ->> 'sets')::int, 'target_reps', (x ->> 'target_reps')::int,
+                     'alt', case when jsonb_typeof(x -> 'alt') = 'object' then jsonb_build_object(
+                              'id', (x -> 'alt' ->> 'id')::bigint, 'target_reps', (x -> 'alt' ->> 'target_reps')::int,
+                              'sets', coalesce((x -> 'alt' ->> 'sets')::int, (x ->> 'sets')::int)) end) order by o)
+                   from jsonb_array_elements(v) with ordinality t(x, o)), '[]'::jsonb) order by i)
+                 from jsonb_array_elements(p_list) with ordinality c(v, i)),
+    rotation_from = app_today(), rotation_shift = p_next, updated_at = now()
+  where id = 1;
+  -- active = упражнение есть хоть в одном комплексе (основным или вторым вариантом).
+  update exercises set active = id in (select coalesce((x -> 'alt' ->> 'id')::bigint, -1)
+                                       from settings s, jsonb_array_elements(s.complexes) c, jsonb_array_elements(c) x
+                                       union all
+                                       select (x ->> 'id')::bigint
+                                       from settings s, jsonb_array_elements(s.complexes) c, jsonb_array_elements(c) x)
+  where true;
+  perform replan_today(old);
 end $$;
 
 -- Цены с 22.10. Цену места убираем.

@@ -126,15 +126,15 @@ function choiceTimes(a, date, pair, id) {
 function currentPlan(a, date) {
   const c = db.complexes[complexIndex(a, date) ?? 0];
   const r = rulesFor(date);
-  const opt = (id, target) => {
+  const opt = (id, target, sets) => {
     const e = db.exercises.find((y) => y.id === id && !y.archived);
-    return e && { id: e.id, name: e.name, unit: e.unit, target_reps: target ?? null };
+    return e && { id: e.id, name: e.name, unit: e.unit, target_reps: target ?? null, sets };
   };
   const priced = db.settings.choice;
   return (c?.items ?? []).map((x) => {
-    const main = opt(x.id, x.target_reps);
+    const main = opt(x.id, x.target_reps, x.sets);
     if (!main) return null;
-    const alt = db.settings.choice && x.alt ? opt(x.alt.id, x.alt.target_reps) : null;
+    const alt = db.settings.choice && x.alt ? opt(x.alt.id, x.alt.target_reps, x.alt.sets ?? x.sets) : null;
     if (!alt) return { ...main, sets: x.sets, ...(priced ? { times: 0, eff: 100 } : {}) };
     const pick = [main, alt].map((o) => {
       if (!priced) return o;
@@ -487,8 +487,8 @@ function setStatus(a, date, status) {
       return [id, { rep: Math.round((k / t) * 100) / 100, over: Math.round((k / 4 / cap) * 100) / 100, cap }];
     })),
     streak_from: 3, streak_step: 0.1, streak_max: 1.5,
-    miss_penalty_pct: 10, rest_day_price: 150, purchase_limit_week: 2, phone_price: 4000,
-    allin_price: 30, allin_up: 0.3, allin_down: 0.7, allin_limit_week: 1 });
+    miss_penalty_pct: 10, rest_day_price: 4000, purchase_limit_week: 2, phone_price: 150000,
+    allin_price: 2000, allin_up: 0.3, allin_down: 0.7, allin_limit_week: 1 });
   // «Выбор» с сегодняшнего дня: повтор того же −10% эффективности, не ниже 50%.
   db.rules.push({ ...db.rules[db.rules.length - 1], valid_from: T, choice_drop: 10, choice_floor: 50 });
 
@@ -587,7 +587,7 @@ function setStatus(a, date, status) {
   const day = ensureDay(a, T);
   // Первое место (подтягивания или тяга) друг ещё не выбрал, во втором взял сгибания, в третьем лодочку.
   [[1, 1], [2, 0]].forEach(([i, k]) => { const x = day.plan[i]; const o = x.pick[k];
-    day.plan[i] = { ...x, id: o.id, name: o.name, unit: o.unit, target_reps: o.target_reps, chosen: k,
+    day.plan[i] = { ...x, id: o.id, name: o.name, unit: o.unit, target_reps: o.target_reps, sets: o.sets ?? x.sets, chosen: k,
       ...(o.eff != null ? { times: o.times, eff: o.eff } : {}) }; });
   [[day.plan[1].id, 1, 15], [day.plan[1].id, 2, 16], [day.plan[2].id, 1, 15]].forEach(([id, n, r], i) => {
     const row = { id: seq++, athlete_id: a, date: T, exercise_id: id, set_no: n, claimed: r, has_video: false,
@@ -681,7 +681,8 @@ export const api = {
         fail('Подходов — от 1 до 10, цель — от 1 до 1000');
       }
       if (c.some((x) => x.alt && (!db.exercises.some((e) => e.id === x.alt.id && !e.archived)
-        || (x.alt.target_reps != null && (x.alt.target_reps < 1 || x.alt.target_reps > 1000))))) fail('Второй вариант: неизвестное упражнение или цель не от 1 до 1000');
+        || (x.alt.target_reps != null && (x.alt.target_reps < 1 || x.alt.target_reps > 1000))
+        || (x.alt.sets != null && (x.alt.sets < 1 || x.alt.sets > 10))))) fail('Второй вариант: неизвестное упражнение, подходов не от 1 до 10 или цель не от 1 до 1000');
       const ids = c.flatMap((x) => (x.alt ? [x.id, x.alt.id] : [x.id]));
       if (new Set(ids).size !== ids.length) fail('Упражнение повторяется в одном комплексе');
     }
@@ -689,7 +690,7 @@ export const api = {
     const old = JSON.stringify(currentPlan(ATHLETE.id, t));
     db.complexes = list.map((c, i) => ({ id: seq++, position: i,
       items: c.map(({ id, sets, target_reps, alt }) => ({ id, sets, target_reps: target_reps ?? null,
-        alt: alt ? { id: alt.id, target_reps: alt.target_reps ?? null } : null })) }));
+        alt: alt ? { id: alt.id, target_reps: alt.target_reps ?? null, sets: alt.sets ?? sets } : null })) }));
     Object.assign(db.settings, { rotation_from: t, rotation_shift: next });
     markActive();
     replanToday(old);
@@ -705,7 +706,7 @@ export const api = {
     if (x.chosen != null) fail('Выбор уже подтверждён');
     if (pickLocked(x, db.logs.filter((l) => l.athlete_id === current.id && l.date === date))) fail('Подход уже отмечен — выбор не поменять');
     const o = x.pick[k];
-    d.plan[i] = { ...x, id: o.id, name: o.name, unit: o.unit, target_reps: o.target_reps, chosen: k,
+    d.plan[i] = { ...x, id: o.id, name: o.name, unit: o.unit, target_reps: o.target_reps, sets: o.sets ?? x.sets, chosen: k,
       ...(o.eff != null ? { times: o.times, eff: o.eff } : {}) };
     return clone(d);
   },

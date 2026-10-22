@@ -158,7 +158,7 @@ function pickCard(ex, i, total, date, state, editable, mode, catalog, allin, log
     const tiles = html`<div class="pick-grid">${ex.pick.map((o, k) => html`<button type="button" class="pick-tile"
       data-pick="${k}" aria-pressed="false" ${can ? '' : html`disabled`}>
       <span class="pick-name">${o.name}</span>
-      <span class="label">${goalText({ sets: ex.sets, target_reps: o.target_reps }, unitOf(o, catalog))}</span>
+      <span class="label">${goalText({ sets: o.sets ?? ex.sets, target_reps: o.target_reps }, unitOf(o, catalog))}</span>
       ${o.eff != null ? effChip(o) : ''}
     </button>`)}</div>`;
     return html`<section class="card pick-card">
