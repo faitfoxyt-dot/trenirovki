@@ -506,8 +506,8 @@ function setStatus(a, date, status) {
     streak_from: 3, streak_step: 0.1, streak_max: 1.5,
     miss_penalty_pct: 10, rest_day_price: 150, purchase_limit_week: 2, phone_price: 4000,
     allin_price: 30, allin_up: 0.3, allin_down: 0.7, allin_limit_week: 1 });
-  // Цена места при «Выборе» — с сегодняшнего дня (концепт): 800 за всё в цель, максимум 1100, повтор того же −10%, не ниже 50%.
-  db.rules.push({ ...db.rules[db.rules.length - 1], valid_from: T, choice_price: 800, choice_max: 1100, choice_drop: 10, choice_floor: 50 });
+  // Цена места при «Выборе» — с сегодняшнего дня: 800 за всё в цель, максимум 1000, повтор того же −10%, не ниже 50%.
+  db.rules.push({ ...db.rules[db.rules.length - 1], valid_from: T, choice_price: 800, choice_max: 1000, choice_drop: 10, choice_floor: 50 });
 
   let j = 0; // номер тренировочного дня
   const log = (date, ex, n, claimed, video = true) => {

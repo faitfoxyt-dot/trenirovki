@@ -229,14 +229,18 @@ export function choiceTop(r, times = 0) {
 // Цепочка цен подряд: 1000 → 900 → 800 → …
 export const choiceChain = (r, n = 5) => Array.from({ length: n }, (_, i) => choicePrice(r, i));
 
-// Очки за подход по цене места — как place_points в базе (до множителя серии).
-// Подход в цель — цена / подходы; меньше цели — по доле; каждый повтор сверх цели стоит как повтор в цель,
-// но за день по упражнению вместе не больше top. other — бонус других подходов этого упражнения за день.
+// Очки за подход по цене места — как award_set в базе (до множителя серии).
+// Подход в цель — цена / подходы; меньше цели — по доле. Сверх цели: +PLACE_OVER (25%) к цели в каждом подходе
+// дают весь бонус (top − price), меньше — по доле; за день по упражнению не больше top.
+// other — бонус других подходов этого упражнения за день.
+export const PLACE_OVER = 0.25;
 export function placeSetPoints(price, top, sets, target, reps, other = 0) {
-  const per = price / Math.max(sets, 1);
+  const n = Math.max(sets, 1);
+  const per = price / n;
   if (!(reps > 0)) return { base: 0, bonus: 0 };
   const base = !target || reps >= target ? per : (per * reps) / target;
-  const raw = target && reps > target ? ((reps - target) * per) / target : 0;
+  const extra = (top ?? price) - price;
+  const raw = target && reps > target ? ((reps - target) * extra) / (n * target * PLACE_OVER) : 0;
   const bonus = Math.max(0, Math.min(Math.round(raw), (top ?? price) - price - other));
   return { base: Math.round(base), bonus };
 }
