@@ -845,3 +845,22 @@ body.gd-lock { overflow: hidden; }
 .fg-trail { fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-dasharray: 1.5 3.5; stroke-linecap: round; opacity: .75; }
 .fg-trail-tip { fill: var(--accent); opacity: .85; }
 .fg-mat { fill: #2C3B47; }
+
+/* Тихая кнопка-строка: удалить и подобное, чтобы не спорила с главной. */
+.text-btn { min-height: 40px; border: 0; background: transparent; color: var(--muted); font-size: 13px; cursor: pointer; padding: 0; }
+.text-btn.bad { color: var(--bad); }
+
+/* «План» → комплексы: место — одно упражнение или выбор из двух. */
+.place { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 14px; }
+.place-two { border-color: var(--line-2); }
+.place-head { display: flex; align-items: center; gap: 10px; }
+.place-no {
+  width: 32px; height: 32px; flex: none; border-radius: 10px; background: var(--line); color: var(--text);
+  display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px;
+}
+.place-kind { flex: 1; gap: 6px; }
+.place-kind .pill { min-height: 36px; font-size: 13px; }
+.slot { display: flex; flex-direction: column; gap: 8px; }
+.place-two .slot + .alt-or + .slot { padding-top: 2px; }
+.place .alt-or { text-align: center; }
+#ex-list { display: flex; flex-direction: column; gap: 10px; }

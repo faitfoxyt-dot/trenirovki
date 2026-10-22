@@ -206,41 +206,21 @@ export function swapItems(plan, logs, catalog, ids = null) {
   });
 }
 
-// Цена места при «Выборе»: каждое упражнение стоит одинаково — choice_price за все подходы в цель,
-// со сверх цели — не больше choice_max. Эффективность: берёт то же самое подряд — каждый раз минус choice_drop %
-// (−10%, −20%, …), но не ниже choice_floor %; на неё умножаются обе цифры. Где выбора нет — 100%.
-// null — цены места нет, очки по «Правилам» упражнения.
+// Эффективность при «Выборе»: берёт то же самое подряд — каждый раз минус choice_drop % (−10%, −20%, …),
+// но не ниже choice_floor %; на неё умножаются очки подхода. Где выбора нет — 100%.
 export function choiceEff(r, times = 0) {
   const drop = Number(r?.choice_drop ?? 0);
   const floor = Number(r?.choice_floor ?? 0);
   return Math.max(floor, 100 - drop * times);
 }
-export function choicePrice(r, times = 0) {
-  const base = Number(r?.choice_price);
-  if (!(base > 0)) return null;
-  return Math.round((base * choiceEff(r, times)) / 100);
-}
-export function choiceTop(r, times = 0) {
-  const price = choicePrice(r, times);
-  if (price === null) return null;
-  const top = Number(r.choice_max);
-  return top > 0 ? Math.max(price, Math.round((top * choiceEff(r, times)) / 100)) : price;
-}
-// Цепочка цен подряд: 1000 → 900 → 800 → …
-export const choiceChain = (r, n = 5) => Array.from({ length: n }, (_, i) => choicePrice(r, i));
 
-// Очки за подход по цене места — как award_set в базе (до множителя серии).
-// Подход в цель — цена / подходы; меньше цели — по доле. Сверх цели: +PLACE_OVER (50%) к цели в каждом подходе
-// дают весь бонус (top − price), меньше — по доле; подход не больше своей доли, за день по упражнению не больше top.
-// other — бонус других подходов этого упражнения за день.
-export const PLACE_OVER = 0.5;
-export function placeSetPoints(price, top, sets, target, reps, other = 0) {
-  const n = Math.max(sets, 1);
-  const per = price / n;
+// Очки за подход по «Правилам» упражнения — как award_set в базе (до множителя серии).
+// rep — за каждый повтор до цели, over — за повтор сверх цели, cap — сколько повторов сверх цели
+// в подходе считается. У упражнений на время всё в секундах. eff — эффективность при «Выборе», %.
+export function ruleSetPoints(pe, target, reps, eff = 100) {
   if (!(reps > 0)) return { base: 0, bonus: 0 };
-  const base = !target || reps >= target ? per : (per * reps) / target;
-  const extra = (top ?? price) - price;
-  const raw = target && reps > target ? ((reps - target) * extra) / (n * target * PLACE_OVER) : 0;
-  const bonus = Math.max(0, Math.min(Math.round(raw), Math.round(extra / n), extra - other));
-  return { base: Math.round(base), bonus };
+  const k = eff / 100;
+  const base = Math.min(reps, target ?? reps) * (pe?.rep ?? 0) * k;
+  const over = target != null && reps > target ? Math.min(reps - target, pe?.cap ?? Infinity) : 0;
+  return { base, bonus: Math.round(over * (pe?.over ?? 0) * k) };
 }

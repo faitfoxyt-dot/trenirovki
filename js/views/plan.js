@@ -35,8 +35,8 @@ export async function render(el, ctx, args, alive) {
   const catalog = exercises.filter((e) => !e.archived);
   const cx = complexes.map((c) => c.items.filter((x) => catalog.some((e) => e.id === x.id))
     .map(({ id, sets, target_reps, alt }) => ({ id, sets, target_reps: target_reps ?? null,
-      alt: alt && catalog.some((e) => e.id === alt.id) ? { id: alt.id, target_reps: alt.target_reps ?? null } : null })));
-  let choice = Boolean(settings.choice); // пробный «Выбор»: в каждом месте два варианта
+      alt: alt && catalog.some((e) => e.id === alt.id) ? { id: alt.id, sets: alt.sets ?? sets, target_reps: alt.target_reps ?? null } : null })));
+  let choice = Boolean(settings.choice); // «Выбор»: места с двумя вариантами работают, только когда он включён
   if (!cx.length) cx.push([]);
   let cur = 0; // какой комплекс сейчас открыт
   // Какой комплекс сегодня (или на ближайшей тренировке, если сегодня не тренировка).
@@ -79,17 +79,13 @@ export async function render(el, ctx, args, alive) {
 
     <section class="card">
       <h2 class="h2">Комплексы</h2>
-      <p class="label">Сделай несколько комплексов — они пойдут по кругу по тренировочным дням: А, Б, В, снова А…
-        Выходной, больничный и «занят» очередь не двигают. Пустая цель — друг просто пишет, сколько сделал.
-        Новые упражнения и очки — во вкладке «Правила».</p>
-      <label class="row switch-row choice-switch"><span>🎯 Выбор упражнения <span class="chip">пробно</span></span>
-        <input type="checkbox" class="switch" id="cx-choice" ${choice ? html`checked` : ''}></label>
-      <p class="label" id="choice-help"></p>
+      <p class="label">Комплексы идут по кругу по тренировочным дням: А, Б, В, снова А… В каждом месте — одно упражнение
+        или выбор из двух: друг сам берёт одно на «Сегодня». Новые упражнения и цены — во вкладке «Правила».</p>
       <div class="seg" id="cx-tabs" role="group" aria-label="Комплексы"></div>
       <div id="ex-list"></div>
-      ${catalog.length ? html`<button type="button" class="ghost" id="ex-add">+ Упражнение из списка</button>`
+      ${catalog.length ? html`<button type="button" class="ghost" id="ex-add">+ Место</button>`
         : html`<p class="label">Список упражнений пуст. Добавь их во вкладке «Правила».</p>`}
-      <button type="button" class="ghost ghost-bad" id="cx-del" hidden></button>
+      <button type="button" class="text-btn bad" id="cx-del" hidden></button>
       <div id="cx-rot" class="stack-8"></div>
       <p class="error" id="ex-error" role="alert"></p>
       <button type="button" class="btn" id="ex-save">Сохранить комплексы</button>
@@ -169,54 +165,46 @@ export async function render(el, ctx, args, alive) {
   const delBtn = el.querySelector('#cx-del');
   const trainingDays = schedule.filter((d) => d.status === 'training').map((d) => d.date);
   const used = (rows) => rows.flatMap((r) => (r.alt ? [r.id, r.alt.id] : [r.id]));
-  // Второй вариант в этом месте комплекса: друг выбирает один из двух. Подходов столько же.
-  const altBox = (x, i, rows) => {
-    const alt = x.alt && catalog.find((e) => e.id === x.alt.id);
-    return html`<div class="alt-box">
-      <p class="alt-or">или на выбор</p>
-      <div class="field">
-        <label class="label" for="ex-alt-${i}">Второй вариант</label>
-        <select class="input" id="ex-alt-${i}" data-k="alt">
-          <option value="">— нет, только «${catalog.find((e) => e.id === x.id)?.name ?? ''}» —</option>
-          ${catalog.map((e) => html`<option value="${e.id}" ${e.id === x.alt?.id ? html`selected` : ''}
-            ${e.id !== x.alt?.id && used(rows).includes(e.id) ? html`disabled` : ''}>${e.name}${e.unit === 'sec' ? ' · на время' : ''}</option>`)}
-        </select>
+  // Слот места: упражнение, подходы, цель. alt — второй вариант (друг выбирает один из двух).
+  const slot = (o, i, rows, alt) => {
+    const p = alt ? 'alt_' : '';
+    const unit = unitText(unitOf(o, catalog)).many;
+    return html`<div class="slot">
+      <select class="input" id="ex-${p}id-${i}" data-k="${alt ? 'alt' : 'id'}" aria-label="${alt ? 'Второй вариант' : 'Упражнение'}">
+        ${catalog.map((e) => html`<option value="${e.id}" ${e.id === o.id ? html`selected` : ''}
+          ${e.id !== o.id && used(rows).includes(e.id) ? html`disabled` : ''}>${e.name}${e.unit === 'sec' ? ' · на время' : ''}</option>`)}
+      </select>
+      <div class="grid-2">
+        <div class="field"><label class="label" for="ex-${p}sets-${i}">Подходов</label>
+          <input class="input" id="ex-${p}sets-${i}" data-k="${p}sets" type="number" inputmode="numeric" min="1" max="10" value="${o.sets ?? ''}"></div>
+        <div class="field"><label class="label" for="ex-${p}goal-${i}">Цель, ${unit}</label>
+          <input class="input" id="ex-${p}goal-${i}" data-k="${p}target_reps" type="number" inputmode="numeric" min="1" max="1000" placeholder="без цели" value="${o.target_reps ?? ''}"></div>
       </div>
-      ${alt ? html`<div class="field"><label class="label" for="ex-alt-goal-${i}">Цель второго, ${unitText(alt.unit).many}</label>
-        <input class="input" id="ex-alt-goal-${i}" data-k="alt_target" type="number" inputmode="numeric" min="1" max="1000" placeholder="без цели" value="${x.alt.target_reps ?? ''}"></div>` : ''}
     </div>`;
   };
   const draw = () => {
     const rows = cx[cur];
-    el.querySelector('#choice-help').textContent = choice
-      ? 'Включено: в каждом месте комплекса можно дать два варианта, например с турником и без. Друг сам берёт один на «Сегодня». Очки — по «Правилам»: цена упражнения и эффективность (или цены каждого упражнения, если цена не задана).'
-      : 'Выключено: друг делает упражнения комплекса как есть. Вторые варианты сохранятся, если включишь снова.';
     el.querySelector('#ex-error').textContent = '';
     tabs.innerHTML = String(html`${cx.map((_, i) => html`<button type="button" class="pill ${i === cur ? 'pill-on' : ''}"
         data-cx="${i}" aria-pressed="${i === cur}">${cxLetter(i)}</button>`)}
       ${cx.length < CX_LETTERS.length ? html`<button type="button" class="pill" id="cx-add" aria-label="Добавить комплекс">${cx.length === 1 ? '+ Комплекс' : '+'}</button>` : ''}`);
-    list.innerHTML = String(html`${rows.length ? '' : html`<p class="label">В комплексе ${cxLetter(cur)} пока нет упражнений.</p>`}
-    ${rows.map((x, i) => html`<div class="ex-edit" data-i="${i}">
-      <div class="field">
-        <label class="label" for="ex-id-${i}">Упражнение</label>
-        <select class="input" id="ex-id-${i}" data-k="id">
-          ${catalog.map((e) => html`<option value="${e.id}" ${e.id === x.id ? html`selected` : ''}
-            ${e.id !== x.id && used(rows).includes(e.id) ? html`disabled` : ''}>${e.name}${e.unit === 'sec' ? ' · на время' : ''}</option>`)}
-        </select>
+    list.innerHTML = String(html`${rows.length ? '' : html`<p class="label">В комплексе ${cxLetter(cur)} пока пусто — нажми «+ Место».</p>`}
+    ${rows.map((x, i) => html`<div class="place ${x.alt ? 'place-two' : ''}" data-i="${i}">
+      <div class="place-head">
+        <span class="place-no">${i + 1}</span>
+        <div class="seg place-kind" role="group" aria-label="Что в месте ${i + 1}">
+          <button type="button" class="pill ${x.alt ? '' : 'pill-on'}" data-kind="one" aria-pressed="${!x.alt}">Одно</button>
+          <button type="button" class="pill ${x.alt ? 'pill-on' : ''}" data-kind="two" aria-pressed="${Boolean(x.alt)}">Выбор из двух</button>
+        </div>
       </div>
-      <div class="grid-2">
-        <div class="field"><label class="label" for="ex-sets-${i}">Подходов</label>
-          <input class="input" id="ex-sets-${i}" data-k="sets" type="number" inputmode="numeric" min="1" max="10" value="${x.sets}"></div>
-        <div class="field"><label class="label" for="ex-goal-${i}">Цель, ${unitText(unitOf(x, catalog)).many}</label>
-          <input class="input" id="ex-goal-${i}" data-k="target_reps" type="number" inputmode="numeric" min="1" max="1000" placeholder="без цели" value="${x.target_reps ?? ''}"></div>
-      </div>
-      ${choice ? altBox(x, i, rows) : ''}
+      ${slot(x, i, rows, false)}
+      ${x.alt ? html`<p class="alt-or">или</p>${slot({ ...x.alt, sets: x.alt.sets ?? x.sets }, i, rows, true)}` : ''}
       <div class="row">
         <div class="row-gap">
           <button type="button" class="ghost icon" data-move="-1" aria-label="Выше" ${i === 0 ? html`disabled` : ''}>↑</button>
           <button type="button" class="ghost icon" data-move="1" aria-label="Ниже" ${i === rows.length - 1 ? html`disabled` : ''}>↓</button>
         </div>
-        <button type="button" class="ghost" data-remove>Убрать</button>
+        <button type="button" class="text-btn bad" data-remove>Убрать место</button>
       </div>
     </div>`)}`);
     delBtn.hidden = cx.length < 2;
@@ -237,15 +225,6 @@ export async function render(el, ctx, args, alive) {
     } catch (err) { e.target.checked = !e.target.checked; ctx.toast(err.message); }
   });
 
-  el.querySelector('#cx-choice').addEventListener('change', async (e) => {
-    try {
-      await api.setChoice(e.target.checked);
-      choice = settings.choice = e.target.checked;
-      ctx.toast(choice ? 'Выбор включён' : 'Выбор выключен');
-      draw();
-    } catch (err) { e.target.checked = choice; ctx.toast(err.message); }
-  });
-
   tabs.addEventListener('click', (e) => {
     const b = e.target.closest('[data-cx]');
     if (b) { cur = Number(b.dataset.cx); draw(); return; }
@@ -263,31 +242,43 @@ export async function render(el, ctx, args, alive) {
     if (e.target.id === 'cx-next') { next = Number(e.target.value); draw(); }
   });
   list.addEventListener('change', (e) => {
-    const i = Number(e.target.closest('.ex-edit')?.dataset.i);
+    const i = Number(e.target.closest('.place')?.dataset.i);
     if (e.target.dataset.k === 'alt') {
       const ex = catalog.find((c) => c.id === Number(e.target.value));
-      cx[cur][i].alt = ex ? { id: ex.id, target_reps: ex.target_reps } : null;
+      cx[cur][i].alt = { id: ex.id, sets: cx[cur][i].alt?.sets ?? cx[cur][i].sets, target_reps: ex.target_reps };
       draw();
       return;
     }
     if (e.target.dataset.k !== 'id') return;
     const ex = catalog.find((c) => c.id === Number(e.target.value));
-    cx[cur][i] = { id: ex.id, sets: ex.sets, target_reps: ex.target_reps, alt: cx[cur][i].alt };
+    cx[cur][i] = { id: ex.id, sets: cx[cur][i].sets, target_reps: ex.target_reps, alt: cx[cur][i].alt };
     draw();
   });
   list.addEventListener('input', (e) => {
-    const i = Number(e.target.closest('.ex-edit')?.dataset.i);
+    const i = Number(e.target.closest('.place')?.dataset.i);
     const k = e.target.dataset.k;
     if (!k || k === 'id' || k === 'alt') return;
     const v = e.target.value === '' ? null : Number(e.target.value);
-    if (k === 'alt_target') cx[cur][i].alt.target_reps = v;
+    if (k.startsWith('alt_')) cx[cur][i].alt[k.slice(4)] = v;
     else cx[cur][i][k] = v;
   });
   list.addEventListener('click', (e) => {
-    const card = e.target.closest('.ex-edit');
+    const card = e.target.closest('.place');
     if (!card) return;
     const rows = cx[cur];
     const i = Number(card.dataset.i);
+    const kind = e.target.closest('[data-kind]');
+    if (kind) {
+      const two = kind.dataset.kind === 'two';
+      if (two === Boolean(rows[i].alt)) return;
+      if (two) {
+        const ex = catalog.find((c) => !used(rows).includes(c.id));
+        if (!ex) { ctx.toast(`Все упражнения из списка уже в комплексе ${cxLetter(cur)}`); return; }
+        rows[i].alt = { id: ex.id, sets: rows[i].sets, target_reps: ex.target_reps };
+      } else rows[i].alt = null;
+      draw();
+      return;
+    }
     const move = e.target.closest('[data-move]');
     if (move) {
       const j = i + Number(move.dataset.move);
@@ -303,14 +294,15 @@ export async function render(el, ctx, args, alive) {
     const rows = cx[cur];
     const ex = catalog.find((c) => !used(rows).includes(c.id));
     if (!ex) { ctx.toast(`Все упражнения из списка уже в комплексе ${cxLetter(cur)}`); return; }
-    rows.push({ id: ex.id, sets: ex.sets, target_reps: ex.target_reps, alt: null });
+    rows.push({ id: ex.id, sets: rows[0]?.sets ?? ex.sets, target_reps: ex.target_reps, alt: null });
     draw();
   });
   el.querySelector('#ex-save').addEventListener('click', async () => {
     const error = el.querySelector('#ex-error');
     const badAt = cx.findIndex((rows) => rows.some((x) => !Number.isInteger(x.sets) || x.sets < 1 || x.sets > 10
       || (x.target_reps !== null && (!Number.isInteger(x.target_reps) || x.target_reps < 1))
-      || (x.alt && x.alt.target_reps !== null && (!Number.isInteger(x.alt.target_reps) || x.alt.target_reps < 1))));
+      || (x.alt && x.alt.target_reps !== null && (!Number.isInteger(x.alt.target_reps) || x.alt.target_reps < 1))
+      || (x.alt && (!Number.isInteger(x.alt.sets ?? x.sets) || (x.alt.sets ?? x.sets) < 1 || (x.alt.sets ?? x.sets) > 10))));
     if (badAt >= 0) {
       cur = badAt; draw();
       error.textContent = `Комплекс ${cxLetter(badAt)}: у каждого упражнения от 1 до 10 подходов; цель — целое число или пусто`;
@@ -325,6 +317,8 @@ export async function render(el, ctx, args, alive) {
     error.textContent = '';
     try {
       await api.saveComplexes(cx, next);
+      // Место с выбором из двух работает, только когда «Выбор» включён.
+      if (!choice && cx.some((rows) => rows.some((x) => x.alt))) { await api.setChoice(true); choice = settings.choice = true; }
       ctx.toast(cx.length > 1 ? 'Комплексы сохранены' : 'Комплекс сохранён');
       ctx.refresh();
     } catch (err) { error.textContent = err.message; }
