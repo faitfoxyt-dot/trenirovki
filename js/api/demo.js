@@ -2,7 +2,7 @@
 // в памяти вкладки. Правила дня и очков повторяют SQL-функции из supabase/migrations.
 
 import { addDays, isoDow, tallinnNow, shortDate, WD_SHORT } from '../util.js';
-import { swapItems as planSwaps, pickLocked, choiceIds, setNumber, choiceEff, ruleSetPoints } from '../logic.js';
+import { swapItems as planSwaps, pickLocked, choiceIds, setNumber, choiceEff, ruleSetPoints, ALLIN_STREAK } from '../logic.js';
 
 const ADMIN = { id: 'admin', role: 'admin', name: 'Тимур' };
 const ATHLETE = { id: 'athlete', role: 'athlete', name: 'Друг' };
@@ -867,6 +867,8 @@ export const api = {
 
   async buyAllin(date) {
     needAthlete();
+    const s = streakAt(current.id, today());
+    if (s < ALLIN_STREAK) fail(`«Всё или ничего» открывается при серии от ${ALLIN_STREAK} дней, сейчас ${s}`);
     return clone(buyAllin(current.id, date));
   },
 

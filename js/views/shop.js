@@ -1,8 +1,8 @@
-// «Магазин»: выходной за очки, «Всё или ничего», больничный, идеи атлета.
+// «Магазин»: выходной за очки, «Всё или ничего», «За гранью предела» (пока только витрина), больничный, идеи атлета.
 // Админ видит то же самое, отменяет покупки и отвечает на идеи.
 
 import { html, dayTitle, addDays } from '../util.js';
-import { POINTS, effectiveStatus, ALLIN, allinExample } from '../logic.js';
+import { POINTS, effectiveStatus, ALLIN, allinExample, ALLIN_STREAK, BEYOND, BEYOND_STREAK } from '../logic.js';
 import { phoneButton, confetti } from './goal.js';
 
 const IDEA = { new: 'на рассмотрении', accepted: 'принята', declined: 'отклонена' };
@@ -36,7 +36,8 @@ export async function render(el, ctx, args, alive) {
   const options = Array.from({ length: AHEAD }, (_, i) => addDays(t, i + 1)).filter((d) => statusOf(d) === 'training' && !taken.has(d));
   const canBuy = price !== null && w.balance >= price && options.length > 0;
   const aPrice = r?.allin_price ?? null;
-  const canAllin = aPrice !== null && w.balance >= aPrice && options.length > 0;
+  const allinOpen = w.streak >= ALLIN_STREAK;
+  const canAllin = allinOpen && aPrice !== null && w.balance >= aPrice && options.length > 0;
   const ex = allinExample(r);
   const todaySick = sick.find((s) => s.date === t) ?? null;
   const todayTraining = statusOf(t) === 'training';
@@ -69,11 +70,12 @@ export async function render(el, ctx, args, alive) {
 
     <section class="card allin-card">
       <div class="row"><h2 class="h2">🎲 ${ALLIN}</h2><span class="chip">${aPrice !== null ? POINTS(aPrice) : 'не продаётся'}</span></div>
+      ${streakLock(w.streak, ALLIN_STREAK, isAdmin)}
       <p>Ставишь день на кон. Каждое упражнение, сделанное до конца, даёт +${ex.up} к множителю очков дня. Каждое несделанное — −${ex.down}.</p>
       <p class="label">Сделано до конца — все подходы не меньше цели. Добавка складывается с серией и действует на все очки этого дня, ниже ×0.1 не падает.
         Пример на трёх упражнениях: сделал всё — очки дня ×${ex.all}, одно не добил — ×${ex.oneMiss}, это уже меньше обычного дня.
         Каждый подход — с видео. Итог считается, когда день закончился и генерал всё проверил.</p>
-      ${isAdmin ? '' : html`
+      ${isAdmin || !allinOpen ? '' : html`
         <label class="label" for="allin-day">На какой день</label>
         <select id="allin-day" class="input" ${options.length ? '' : html`disabled`}>
           ${options.length ? options.map((d) => html`<option value="${d}">${dayTitle(d)}</option>`)
@@ -82,6 +84,11 @@ export async function render(el, ctx, args, alive) {
         <p class="error" id="allin-error" role="alert"></p>
         <button type="button" class="btn" id="buy-allin" ${canAllin ? '' : html`disabled`}>Пойти ва-банк${aPrice !== null ? ` за ${aPrice}` : ''}</button>`}
       <p class="label">${allinHint(r, aPrice, w.balance, isAdmin)}</p>
+    </section>
+
+    <section class="card beyond-card ${w.streak >= BEYOND_STREAK ? '' : 'locked'}">
+      <div class="row"><h2 class="h2">🔥 ${BEYOND}</h2><span class="chip">скоро</span></div>
+      ${streakLock(w.streak, BEYOND_STREAK, isAdmin, 'Серия есть — генерал скоро запустит.')}
     </section>
 
     ${purchases.length ? html`<section class="card">
@@ -205,6 +212,17 @@ function buyHint(r, price, balance, isAdmin) {
   parts.push('Купить можно только заранее, до начала дня. Отменить — тоже до начала дня, очки вернутся.');
   if (r?.purchase_limit_week != null) parts.push(`Не больше ${r.purchase_limit_week} в неделю.`);
   return parts.join(' ');
+}
+
+// Замок по серии: открыто, пока серия держится; пропуск дня — снова закрыто.
+function streakLock(streak, need, isAdmin, open = '') {
+  const pct = Math.min(100, Math.round((streak * 100) / need));
+  if (streak >= need) return html`<p class="ok strong">🔓 ${open || `Открыто: серия ${streak} дн. Пропустишь день — снова закроется.`}</p>`;
+  return html`<div class="lock">
+    <p class="strong">🔒 Открывается при серии от ${need} дней подряд</p>
+    <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="${need}" aria-valuenow="${streak}"><span class="bar-fill" style="width:${pct}%"></span></div>
+    <p class="label">${isAdmin ? 'Серия друга' : 'Твоя серия'}: ${streak} из ${need}. Работает, пока серия держится: пропуск — снова закрыто.</p>
+  </div>`;
 }
 
 function allinHint(r, price, balance, isAdmin) {

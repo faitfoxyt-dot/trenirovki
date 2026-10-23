@@ -170,6 +170,10 @@ export function dayMode({ date, clock, startDate, status }) {
 // «Всё или ничего» (ALL IN): модификатор дня из магазина.
 // Множитель дня = серия + up × сделанные упражнения − down × несделанные, не ниже ×0.1 — как allin_state в базе.
 export const ALLIN = 'Всё или ничего';
+// Модификаторы открываются серией и работают, пока она держится: пропустил день — снова закрыто.
+export const ALLIN_STREAK = 7;
+export const BEYOND = 'За гранью предела';
+export const BEYOND_STREAK = 14;
 const x2 = (v) => Math.round(Number(v) * 100) / 100;
 export const allinMult = (k, up, down, done, miss) => Math.max(0.1, x2(k + up * done - down * miss));
 
