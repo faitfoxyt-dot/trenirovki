@@ -1,13 +1,13 @@
-// «Магазин»: выходной за очки, «Всё или ничего», «За гранью предела» (пока только витрина), больничный, идеи атлета.
+// «Магазин»: выходной за очки, «Всё или ничего», «За гранью предела» (пари на 3 тренировки), больничный, идеи атлета.
 // Админ видит то же самое, отменяет покупки и отвечает на идеи.
 
 import { html, dayTitle, addDays } from '../util.js';
-import { POINTS, effectiveStatus, ALLIN, allinExample, ALLIN_STREAK, PARI, PARI_STREAK, PARI_PRICE, PARI_PRIZES } from '../logic.js';
+import { POINTS, effectiveStatus, ALLIN, allinExample, PARI, PARI_STATE, pariPrize, amount, unitOf } from '../logic.js';
 import { phoneButton, confetti } from './goal.js';
 
 const IDEA = { new: 'на рассмотрении', accepted: 'принята', declined: 'отклонена' };
 const AHEAD = 14; // на сколько дней вперёд можно выбрать выходной
-const ALLIN_AHEAD = 7; // «Всё или ничего» — не дальше недели
+const WEEK = 7; // «Всё или ничего» и начало «За гранью предела» — не дальше недели
 
 export async function render(el, ctx, args, alive) {
   const { api, clock, me } = ctx;
@@ -19,26 +19,32 @@ export async function render(el, ctx, args, alive) {
   }
 
   const t = clock.today;
-  const [w, template, days, purchases, sick, ideas] = await Promise.all([
+  const [w, template, days, purchases, sick, ideas, paris] = await Promise.all([
     api.wallet(isAdmin ? athleteId : undefined),
     api.weekTemplate(),
     api.days(athleteId, t, addDays(t, AHEAD)),
     api.purchases(athleteId, addDays(t, 1)),
     api.sickRequests(athleteId, t),
     api.ideas(athleteId),
+    api.pariList(addDays(t, -21), isAdmin ? athleteId : undefined),
   ]);
   if (!alive()) return;
 
   const r = ctx.rules?.current;
   const price = r?.rest_day_price ?? null;
   const statusOf = (d) => effectiveStatus(d, days.find((x) => x.date === d) ?? null, template);
-  // День, на который уже есть покупка, второй раз не купить.
-  const taken = new Set(purchases.map((p) => p.date));
+  // Пари, которые ещё идут или впереди (последний день — сегодня или позже).
+  const pariNow = paris.filter((p) => p.status === 'active' && p.days.length && p.days[p.days.length - 1] >= t);
+  // День, на который уже есть покупка или идёт пари, второй раз не купить.
+  const taken = new Set([...purchases.map((p) => p.date), ...pariNow.flatMap((p) => p.days)]);
   const options = Array.from({ length: AHEAD }, (_, i) => addDays(t, i + 1)).filter((d) => statusOf(d) === 'training' && !taken.has(d));
   const canBuy = price !== null && w.balance >= price && options.length > 0;
   const aPrice = r?.allin_price ?? null;
-  const allinOpen = w.streak >= ALLIN_STREAK;
-  const allinOptions = options.filter((d) => d <= addDays(t, ALLIN_AHEAD));
+  const allinOpen = w.streak >= (r?.allin_streak ?? 0);
+  const allinOptions = options.filter((d) => d <= addDays(t, WEEK));
+  const pPrice = r?.pari_price ?? null;
+  const pariOpen = w.streak >= (r?.pari_streak ?? 0);
+  const pariPrizes = [[10, r?.pari_p10], [25, r?.pari_p25], [50, r?.pari_p50]].filter(([, v]) => v != null);
   const canAllin = allinOpen && aPrice !== null && w.balance >= aPrice && allinOptions.length > 0;
   const ex = allinExample(r);
   const todaySick = sick.find((s) => s.date === t) ?? null;
@@ -72,7 +78,7 @@ export async function render(el, ctx, args, alive) {
 
     <section class="card allin-card">
       <div class="row"><h2 class="h2">🎲 ${ALLIN}</h2><span class="chip">${aPrice !== null ? POINTS(aPrice) : 'не продаётся'}</span></div>
-      ${streakLock(w.streak, ALLIN_STREAK, isAdmin)}
+      ${r?.allin_streak ? streakLock(w.streak, r.allin_streak, isAdmin) : ''}
       <p>Ставишь день на кон. Каждое упражнение, сделанное до конца, даёт +${ex.up} к множителю очков дня. Каждое несделанное — −${ex.down}.</p>
       <p class="label">Сделано до конца — все подходы не меньше цели. Добавка складывается с серией и действует на все очки этого дня, ниже ×0.1 не падает.
         Пример на трёх упражнениях: сделал всё — очки дня ×${ex.all}, одно не добил — ×${ex.oneMiss}, это уже меньше обычного дня.
@@ -88,16 +94,25 @@ export async function render(el, ctx, args, alive) {
       <p class="label">${allinHint(r, aPrice, w.balance, isAdmin)}</p>
     </section>
 
-    <section class="card beyond-card ${w.streak >= PARI_STREAK ? '' : 'locked'}">
-      <div class="row"><h2 class="h2">🔥 ${PARI}</h2><span class="chip">${POINTS(PARI_PRICE)} · скоро</span></div>
-      ${streakLock(w.streak, PARI_STREAK, isAdmin, 'Серия есть — генерал скоро запустит.')}
-      <p>Спор с генералом на 3 следующие тренировки. На каждую выбираешь одно упражнение и пишешь, сколько сделаешь за один подход.</p>
+    <section class="card beyond-card ${pariOpen ? '' : 'locked'}">
+      <div class="row"><h2 class="h2">🔥 ${PARI}</h2><span class="chip">${pPrice !== null ? POINTS(pPrice) : 'не продаётся'}</span></div>
+      ${r?.pari_streak ? streakLock(w.streak, r.pari_streak, isAdmin) : ''}
+      <p>Спор с генералом на 3 тренировки подряд. На каждую выбираешь одно упражнение и пишешь, сколько сделаешь за один подход.</p>
       <ul class="pari-list">
         <li>Ставка — минимум на 10% больше твоего рекорда в этом упражнении. Если рекорд меньше цели — больше цели.</li>
         <li>Сделал своё число в тот день — забираешь приз. Не сделал — приза нет, обычные очки остаются.</li>
       </ul>
-      <div class="pari-prizes">${PARI_PRIZES.map(([pct, prize]) => html`<div><span class="label">ставка +${pct}%</span><b>${prize}</b></div>`)}</div>
-      <p class="label">Приз умножается на твою серию. Подход со ставкой — с видео, его проверяет генерал. Раз в неделю, в эти дни без «${ALLIN}».</p>
+      <div class="pari-prizes">${pariPrizes.map(([pct, prize]) => html`<div><span class="label">ставка +${pct}%</span><b>${prize}</b></div>`)}</div>
+      <p class="label">Приз умножается на твою серию. Подход со ставкой — с видео, его проверяет генерал. Раз в неделю, начать — не дальше чем через неделю. В эти дни без «${ALLIN}» и без выходного.</p>
+      ${pariNow.map((p) => pariBlock(p, t))}
+      ${isAdmin || !pariOpen || pPrice === null || pariNow.some((p) => p.start > t) ? '' : html`
+        <label class="label" for="pari-start">С какой тренировки начать</label>
+        <select id="pari-start" class="input" ${allinOptions.length ? '' : html`disabled`}>
+          ${allinOptions.length ? allinOptions.map((d) => html`<option value="${d}">${dayTitle(d)}</option>`)
+            : html`<option>Тренировок впереди нет</option>`}
+        </select>
+        <button type="button" class="ghost" id="pari-plan" ${allinOptions.length ? '' : html`disabled`}>Выбрать упражнения</button>
+        <div id="pari-form" class="stack-8"></div>`}
     </section>
 
     ${purchases.length ? html`<section class="card">
@@ -171,6 +186,56 @@ export async function render(el, ctx, args, alive) {
     } catch (e) { err.textContent = e.message; }
   });
 
+  el.querySelector('#pari-plan')?.addEventListener('click', async () => {
+    const box = el.querySelector('#pari-form');
+    try {
+      const plan = await api.pariPlan(el.querySelector('#pari-start').value);
+      if (!alive()) return;
+      box.innerHTML = String(pariForm(plan, w.balance));
+      const prizes = plan.prizes;
+      const sync = () => {
+        box.querySelectorAll('[data-n]').forEach((row) => {
+          const day = plan.days[Number(row.dataset.n) - 1];
+          const it = day.items.find((x) => x.id === Number(row.querySelector('select').value));
+          const inp = row.querySelector('input');
+          inp.min = it.min;
+          inp.placeholder = `от ${it.min}`;
+          const reps = Number(inp.value);
+          const pct = reps ? Math.floor((reps * 100) / it.base - 100) : null;
+          const prize = pct === null ? 0 : pariPrize(prizes, pct);
+          row.querySelector('.pari-base').textContent = `${it.record ? `Рекорд ${amount(it.record, it.unit)}` : 'Рекорда ещё нет'}`
+            + `${it.target && it.target >= it.record ? `, цель ${amount(it.target, it.unit)}` : ''} → ставка от ${amount(it.min, it.unit)}`;
+          row.querySelector('.pari-win').textContent = !reps ? ''
+            : prize ? `+${pct}% → приз ${prize} × серия` : `Мало: нужно от ${amount(it.min, it.unit)}`;
+        });
+      };
+      box.addEventListener('input', sync);
+      box.addEventListener('change', sync);
+      sync();
+      box.querySelector('#buy-pari').addEventListener('click', async () => {
+        const err = box.querySelector('#pari-error');
+        err.textContent = '';
+        const bets = [...box.querySelectorAll('[data-n]')].map((row) => ({ n: Number(row.dataset.n),
+          exercise_id: Number(row.querySelector('select').value), reps: Number(row.querySelector('input').value) || null }));
+        if (!confirm(`${PARI} с ${dayTitle(plan.start)} за ${POINTS(plan.price)}? Ставки потом не поменять.`)) return;
+        try {
+          await api.buyPari(plan.start, bets);
+          ctx.toast('Пари принято. Генерал ждёт!');
+          ctx.refresh();
+        } catch (e) { err.textContent = e.message; }
+      });
+    } catch (e) { box.innerHTML = String(html`<p class="error" role="alert">${e.message}</p>`); }
+  });
+
+  el.querySelectorAll('[data-cancel-pari]').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm(`Отменить «${PARI}»? Очки вернутся.`)) return;
+    try {
+      await api.cancelPari(Number(b.dataset.cancelPari));
+      ctx.toast('Пари отменено, очки вернулись');
+      ctx.refresh();
+    } catch (e) { ctx.toast(e.message); }
+  }));
+
   el.querySelectorAll('[data-cancel]').forEach((b) => b.addEventListener('click', async () => {
     try {
       await api.cancelPurchase(Number(b.dataset.cancel));
@@ -223,10 +288,38 @@ function buyHint(r, price, balance, isAdmin) {
   return parts.join(' ');
 }
 
+// Купленное пари: 3 тренировки, ставки и что с ними.
+function pariBlock(p, t) {
+  return html`<div class="pari-bought stack-8">
+    <p class="strong">Пари с ${dayTitle(p.start)} · ${p.price}</p>
+    ${p.bets.map((b, i) => html`<div class="row pari-bet pari-${b.state}">
+      <span><span class="label">${p.days[i] ? dayTitle(p.days[i]) : `Тренировка ${i + 1}`}</span><br>${b.name} — ${amount(b.reps, unitOf(b))}</span>
+      <span class="chip">${PARI_STATE[b.state].icon} ${b.state === 'won' ? `+${b.points}` : b.prize}</span>
+    </div>`)}
+    ${p.start > t ? html`<button type="button" class="ghost" data-cancel-pari="${p.id}">Отменить до начала</button>` : ''}
+  </div>`;
+}
+
+// Форма ставок: на каждую из 3 тренировок — упражнение из плана и число за один подход.
+function pariForm(plan, balance) {
+  if (plan.days.length < 3) return html`<p class="error">Впереди меньше трёх тренировок.</p>`;
+  return html`
+    ${plan.days.map((d) => html`<div class="pari-day stack-8" data-n="${d.n}">
+      <p class="strong">Тренировка ${d.n} · ${dayTitle(d.date)}</p>
+      <select class="input" aria-label="Упражнение">${d.items.map((it) => html`<option value="${it.id}">${it.name}</option>`)}</select>
+      <p class="label pari-base"></p>
+      <input class="input" type="number" inputmode="numeric" min="1" step="1" aria-label="Сколько за один подход">
+      <p class="label pari-win"></p>
+    </div>`)}
+    <p class="error" id="pari-error" role="alert"></p>
+    <button type="button" class="btn" id="buy-pari" ${balance >= plan.price ? '' : html`disabled`}>Поспорить за ${plan.price}</button>
+    ${balance < plan.price ? html`<p class="label">Не хватает ${POINTS(plan.price - balance)}.</p>` : ''}`;
+}
+
 // Замок по серии: открыто, пока серия держится; пропуск дня — снова закрыто.
-function streakLock(streak, need, isAdmin, open = '') {
+function streakLock(streak, need, isAdmin) {
   const pct = Math.min(100, Math.round((streak * 100) / need));
-  if (streak >= need) return html`<p class="ok strong">🔓 ${open || `Открыто: серия ${streak} дн. Пропустишь день — снова закроется.`}</p>`;
+  if (streak >= need) return html`<p class="ok strong">🔓 Открыто: серия ${streak} дн. Пропустишь день — снова закроется.</p>`;
   return html`<div class="lock">
     <p class="strong">🔒 Открывается при серии от ${need} дней подряд</p>
     <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="${need}" aria-valuenow="${streak}"><span class="bar-fill" style="width:${pct}%"></span></div>

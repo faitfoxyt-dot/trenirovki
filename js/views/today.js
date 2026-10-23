@@ -3,7 +3,7 @@
 
 import { html, raw, dayTitle, addDays, shortDate, debounce } from '../util.js';
 import { MUSCLES, DAY_STATUS, caption, goalText, reviewNote, dayMode, isCalibration, unitOf, unitText,
-  ALLIN, ALLIN_STATE, signed, swapItems, pickLocked, videoCaption, plural } from '../logic.js';
+  ALLIN, ALLIN_STATE, PARI, PARI_STATE, signed, swapItems, pickLocked, videoCaption, plural, amount } from '../logic.js';
 import { openGuide } from './guide.js';
 import { guideFor } from '../guide-data.js';
 import { poseSVG, svg, fitBox, underlay } from '../figure.js';
@@ -26,7 +26,7 @@ export async function render(el, ctx, args, alive) {
     return;
   }
 
-  const [day, logs, mornings, sick, wallet, catalog, allin, weighed, swaps, video, waiting, event] = await Promise.all([
+  const [day, logs, mornings, sick, wallet, catalog, allin, weighed, swaps, video, waiting, event, pari] = await Promise.all([
     api.openDay(date, isAdmin ? athleteId : undefined),
     api.logs(athleteId, date, date),
     api.mornings(athleteId, date, date),
@@ -39,6 +39,7 @@ export async function render(el, ctx, args, alive) {
     api.videoSettings ? api.videoSettings() : { on: false },
     api.waitingVideos ? api.waitingVideos(athleteId, date) : [],
     api.eventDay ? api.eventDay(date, isAdmin ? athleteId : undefined) : null,
+    api.pariDay ? api.pariDay(date, isAdmin ? athleteId : undefined) : null,
   ]);
   if (!alive()) return;
 
@@ -72,6 +73,7 @@ export async function render(el, ctx, args, alive) {
         ${wallet && !beforeStart ? streakChip(wallet, ctx.rules?.current) : ''}
         ${beforeStart ? html`<span class="chip chip-warn">Старт ${shortDate(settings.start_date)}</span>` : ''}
         ${allin && status === 'training' ? html`<span class="chip chip-allin">🎲 ALL IN</span>` : ''}
+        ${pari && status === 'training' ? html`<span class="chip chip-pari">🔥 ${PARI}</span>` : ''}
         ${event?.score > 0 ? html`<span class="chip chip-event">⭐ Событие · очки ×${(1 + event.score / 10).toFixed(1)}</span>` : ''}
       </div>
     </header>
@@ -81,6 +83,7 @@ export async function render(el, ctx, args, alive) {
     ${video.on && !isAdmin && isToday && status === 'training' && !beforeStart ? videoBanner(seenBanner(), day.plan) : ''}
 
     ${allin && status === 'training' && !beforeStart ? allinCard(allin, isToday) : ''}
+    ${pari && status === 'training' && !beforeStart ? pariCard(pari, isToday) : ''}
 
     ${!isAdmin && isToday && clock.grace ? html`<a class="notice" href="#/day/${yesterday}">
       Вчерашний день закрыт. До 03:00 можно отметить видео за вчера →</a>` : ''}
@@ -232,6 +235,21 @@ function allinCard(a, isToday) {
     </ul>
     ${result}
     ${a.k > 1 ? html`<p class="label">Серия даёт ×${a.k}, модификатор прибавляется к ней.</p>` : ''}
+  </section>`;
+}
+
+// «За гранью предела»: ставка на сегодня — упражнение и число за один подход.
+function pariCard(p, isToday) {
+  const what = html`<b>${p.name}</b> — ${amount(p.reps, unitOf(p))} за один подход`;
+  const state = PARI_STATE[p.state];
+  const prize = p.test ? `приз ${p.prize} ×${p.mult} (тестовый период — без очков)` : `приз ${p.prize} ×${p.mult} = ${p.points}`;
+  return html`<section class="card beyond-card">
+    <div class="row"><h2 class="h2">🔥 ${PARI}</h2><span class="chip">${state.icon} ${state.text}</span></div>
+    <p>${isToday ? 'Сегодня спор с генералом: ' : 'Спор с генералом: '}${what}.</p>
+    ${p.state === 'won' ? html`<p class="ok strong">Сделано ${amount(p.best, unitOf(p))}! ${p.test ? prize : `+${p.points} очков`}</p>`
+      : p.state === 'lost' ? html`<p class="warn-strong">Не вышло${p.best ? `: лучший подход ${amount(p.best, unitOf(p))}` : ''}. Обычные очки остаются.</p>`
+      : p.state === 'check' ? html`<p class="strong">Подход на ставку у генерала на проверке. Выиграешь — ${prize}.</p>`
+      : html`<p class="strong">Сделаешь в любом подходе — ${prize}. Подход — с видео.</p>`}
   </section>`;
 }
 

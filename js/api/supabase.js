@@ -221,6 +221,25 @@ export const api = {
     return check(await sb.rpc('allin_day', { p_date: date, p_athlete: athleteId ?? null }));
   },
 
+  async pariPlan(start) {
+    return check(await sb.rpc('pari_plan', { p_start: start }));
+  },
+  async buyPari(start, bets) {
+    return check(await sb.rpc('buy_pari', { p_start: start, p_bets: bets }));
+  },
+  async cancelPari(id) {
+    return check(await sb.rpc('cancel_pari', { p_id: id }));
+  },
+  // До применения 0024 в базе функций нет — тогда просто пусто.
+  async pariList(from, athleteId) {
+    const { data, error } = await sb.rpc('pari_list', { p_from: from, p_athlete: athleteId ?? null });
+    return error ? [] : data;
+  },
+  async pariDay(date, athleteId) {
+    const { data, error } = await sb.rpc('pari_day', { p_date: date, p_athlete: athleteId ?? null });
+    return error ? null : data;
+  },
+
   async cancelPurchase(id) {
     return check(await sb.rpc('cancel_purchase', { p_id: id }));
   },

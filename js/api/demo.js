@@ -2,14 +2,15 @@
 // в памяти вкладки. Правила дня и очков повторяют SQL-функции из supabase/migrations.
 
 import { addDays, isoDow, tallinnNow, shortDate, WD_SHORT } from '../util.js';
-import { swapItems as planSwaps, pickLocked, choiceIds, setNumber, choiceEff, ruleSetPoints, ALLIN_STREAK } from '../logic.js';
+import { swapItems as planSwaps, pickLocked, choiceIds, setNumber, choiceEff, ruleSetPoints } from '../logic.js';
 
 const ADMIN = { id: 'admin', role: 'admin', name: 'Тимур' };
 const ATHLETE = { id: 'athlete', role: 'athlete', name: 'Друг' };
 
 const RULE_KEYS = ['calibration', 'per_exercise', 'streak_from', 'streak_step', 'streak_max',
   'miss_penalty_pct', 'rest_day_price', 'purchase_limit_week', 'phone_price',
-  'allin_price', 'allin_up', 'allin_down', 'allin_limit_week', 'choice_drop', 'choice_floor'];
+  'allin_price', 'allin_up', 'allin_down', 'allin_limit_week', 'choice_drop', 'choice_floor',
+  'allin_streak', 'pari_streak', 'pari_price', 'pari_p10', 'pari_p25', 'pari_p50'];
 
 // Строка каталога: swap — замена по просьбе (id) и её цель.
 const ex = (id, name, sets, target, swap = null, swapTarget = null, unit = 'reps') => ({
@@ -64,6 +65,7 @@ const db = {
   ideas: [],
   theory: [],
   body: [],
+  pari: [], // «За гранью предела»: {id, athlete_id, start, price, status, bets: [{n, exercise_id, name, unit, reps, base, pct, prize}]}
   events: [], // события дня: {athlete_id, date, title, game, score} — score null, пока не сыграл
   videos: [], // видео из Telegram, к которым ещё нет повторов: {athlete_id, date, no, url}
 };
@@ -362,6 +364,9 @@ function settle(a) {
   [...new Set([...db.events.filter((e) => e.athlete_id === a).map((e) => e.date),
     ...db.ledger.filter((x) => x.athlete_id === a && x.kind === 'event').map((x) => x.date)])]
     .filter((d) => d < t && d >= addDays(t, -60)).forEach((d) => eventApply(a, d));
+  [...new Set([...db.pari.filter((p) => p.athlete_id === a && p.start <= t && p.start >= addDays(t, -60)).flatMap((p) => pariDays(a, p.start)),
+    ...db.ledger.filter((x) => x.athlete_id === a && x.kind === 'pari' && x.date >= addDays(t, -60)).map((x) => x.date)])]
+    .filter((d) => d <= t).forEach((d) => pariApply(a, d));
 
   const price = rulesFor(t)?.phone_price;
   if (price > 0) {
@@ -390,6 +395,12 @@ function review(l, decision, confirmed, comment) {
 
 // Видео с номером подхода пришло, и повторы уже вписаны — бот принимает подход сам.
 function videoAccept(l, url) {
+  const b = pariBetAt(l.athlete_id, l.date);
+  if (b && b.exercise_id === l.exercise_id && l.claimed >= b.reps) {
+    // Подход на ставку «За гранью предела» смотрит генерал — бот только прикрепляет видео.
+    Object.assign(l, { has_video: true, video_url: url });
+    return;
+  }
   Object.assign(l, { has_video: true, video_url: url, auto: true });
   review(l, 'accepted');
 }
@@ -409,13 +420,14 @@ function buy(a, date) {
   const t = today();
   const r = rulesFor(t);
   if (date <= t) fail('Выходной покупается заранее, до начала дня');
-  if (date > addDays(t, 7)) fail('«Всё или ничего» можно купить не дальше чем на неделю вперёд');
+  if (date > addDays(t, 60)) fail('Можно купить не дальше чем на 60 дней вперёд');
   if (r?.rest_day_price == null) fail('Цену выходного Тимур ещё не задал');
   const st = dayStatusOf(a, date);
   if (st !== 'training') fail('В этот день и так нет тренировки');
   if (db.purchases.some((p) => p.athlete_id === a && p.date === date && p.status === 'active')) {
     fail('На этот день уже куплено «Всё или ничего». Отмени его, если хочешь выходной');
   }
+  if (pariBetAt(a, date)) fail('В этот день идёт «За гранью предела» — выходной не купить');
   if (r.purchase_limit_week != null) {
     const cnt = db.purchases.filter((p) => p.athlete_id === a && p.status === 'active' && p.kind === 'rest' && weekStart(p.date) === weekStart(date)).length;
     if (cnt >= r.purchase_limit_week) fail(`На этой неделе лимит: ${r.purchase_limit_week} вых.`);
@@ -437,6 +449,7 @@ function buyAllin(a, date) {
   if (r?.allin_price == null) fail('Цену «Всё или ничего» Тимур ещё не задал');
   if (dayStatusOf(a, date) !== 'training') fail('В этот день нет тренировки');
   if (db.purchases.some((p) => p.athlete_id === a && p.date === date && p.status === 'active')) fail('На этот день уже есть покупка');
+  if (pariBetAt(a, date)) fail('В этот день идёт «За гранью предела» — вместе нельзя');
   if (r.allin_limit_week != null) {
     const cnt = db.purchases.filter((p) => p.athlete_id === a && p.status === 'active' && p.kind === 'allin' && weekStart(p.date) === weekStart(date)).length;
     if (cnt >= r.allin_limit_week) fail(`На этой неделе лимит «Всё или ничего»: ${r.allin_limit_week}`);
@@ -447,6 +460,104 @@ function buyAllin(a, date) {
   db.purchases.push(p);
   addLedger({ athlete_id: a, date, kind: 'purchase', amount: -p.price, note: `Всё или ничего на ${dayLabel(date)}` });
   return p;
+}
+
+// «За гранью предела» — как pari_* в базе.
+// 3 тренировочных дня пари начиная со start: больничный посреди — ставка переезжает на следующую тренировку.
+function pariDays(a, start) {
+  const res = [];
+  for (let d = start; res.length < 3 && d < addDays(start, 21); d = addDays(d, 1)) if (dayStatusOf(a, d) === 'training') res.push(d);
+  return res;
+}
+const pariRecord = (a, id) => Math.max(0, ...db.logs.filter((l) => l.athlete_id === a && l.exercise_id === id
+  && (l.review === 'accepted' || l.review === 'corrected')).map((l) => l.confirmed ?? l.claimed ?? 0));
+const pariOptions = (a, date) => (findDay(a, date)?.plan ?? currentPlan(a, date)).flatMap((x) => x.pick ?? [x])
+  .map((y) => ({ id: y.id, name: y.name, unit: y.unit ?? 'reps', target_reps: y.target_reps ?? null }));
+const pariBase = (a, o) => Math.max(pariRecord(a, o.id), o.target_reps ?? 0, 1);
+function pariPrize(r, pct) {
+  if (pct >= 50) return r?.pari_p50 ?? 0;
+  if (pct >= 25) return r?.pari_p25 ?? 0;
+  return pct >= 10 ? r?.pari_p10 ?? 0 : 0;
+}
+function pariBetAt(a, date) {
+  for (const p of db.pari.filter((x) => x.athlete_id === a && x.status === 'active' && x.start <= date && x.start > addDays(date, -21))) {
+    const i = pariDays(a, p.start).indexOf(date);
+    if (i >= 0) return { ...p.bets[i], pari_id: p.id };
+  }
+  return null;
+}
+function pariState(a, date) {
+  const b = pariBetAt(a, date);
+  if (!b) return null;
+  const logs = db.logs.filter((l) => l.athlete_id === a && l.date === date && l.exercise_id === b.exercise_id);
+  const ok = logs.filter((l) => l.review === 'accepted' || l.review === 'corrected').map((l) => l.confirmed ?? l.claimed ?? 0);
+  const best = ok.length ? Math.max(...ok) : null;
+  let state = 'wait';
+  if ((best ?? 0) >= b.reps) state = 'won';
+  else if (logs.some((l) => l.review === 'pending' && l.claimed >= b.reps)) state = 'check';
+  else if (date < today()) state = 'lost';
+  const mult = streakMult(rulesFor(date), dayStreak(a, date));
+  return { ...b, date, best, state, mult, points: Math.round(b.prize * mult), test: isTestDay(date) };
+}
+function pariApply(a, date) {
+  if (isTestDay(date)) return;
+  const s = pariState(a, date);
+  const want = s?.state === 'won' ? s.points : 0;
+  const have = db.ledger.filter((x) => x.athlete_id === a && x.date === date && x.kind === 'pari').reduce((n, x) => n + x.rating, 0);
+  const delta = want - have;
+  if (!delta) return;
+  addLedger({ athlete_id: a, date, kind: 'pari', amount: Math.max(delta, -balance(a)), rating: delta,
+    note: want === 0 ? 'За гранью предела: приз снят'
+      : `${have ? 'Пересмотр: ' : ''}За гранью предела: ${s.name} ${s.best} при ставке ${s.reps} · приз ${s.prize} ×${s.mult}` });
+}
+function pariPlan(a, start) {
+  const r = rulesFor(today());
+  return { start, price: r?.pari_price ?? null, prizes: [r?.pari_p10, r?.pari_p25, r?.pari_p50],
+    days: pariDays(a, start).map((date, i) => ({ n: i + 1, date, items: pariOptions(a, date).map((o) => {
+      const base = pariBase(a, o);
+      return { id: o.id, name: o.name, unit: o.unit, target: o.target_reps, record: pariRecord(a, o.id), base, min: Math.ceil(base * 1.1) };
+    }) })) };
+}
+function buyPari(a, start, bets) {
+  const t = today();
+  const r = rulesFor(t);
+  if (r?.pari_price == null) fail('«За гранью предела» пока не продаётся');
+  if (start <= t) fail('«За гранью предела» покупается заранее, до начала дня');
+  if (start > addDays(t, 7)) fail('Начать можно не дальше чем через неделю');
+  const s = streakAt(a, t);
+  if (s < (r.pari_streak ?? 0)) fail(`«За гранью предела» открывается при серии от ${r.pari_streak} дней, сейчас ${s}`);
+  if (db.pari.some((p) => p.athlete_id === a && p.status === 'active' && weekStart(p.start) === weekStart(start))) {
+    fail('«За гранью предела» — раз в неделю, на эту неделю уже куплено');
+  }
+  const days = pariDays(a, start);
+  if (days.length < 3) fail('Впереди меньше трёх тренировок');
+  days.forEach((d) => {
+    if (pariBetAt(a, d)) fail(`${dayLabel(d)} уже в другом пари`);
+    if (db.purchases.some((p) => p.athlete_id === a && p.date === d && p.status === 'active')) fail(`На ${dayLabel(d)} уже куплено «Всё или ничего» — вместе нельзя`);
+  });
+  if (!Array.isArray(bets) || bets.length !== 3) fail('Нужно три ставки — по одной на тренировку');
+  if (balance(a) < r.pari_price) fail(`Не хватает очков: нужно ${r.pari_price}, на балансе ${balance(a)}`);
+  const rows = days.map((d, i) => {
+    const bet = bets.find((x) => x.n === i + 1);
+    if (!bet) fail(`Нет ставки на тренировку ${i + 1}`);
+    const o = pariOptions(a, d).find((y) => y.id === bet.exercise_id);
+    if (!o) fail(`Этого упражнения нет в плане на ${dayLabel(d)}`);
+    const base = pariBase(a, o);
+    if (!(bet.reps >= Math.ceil(base * 1.1))) fail(`${o.name}: ставка минимум ${Math.ceil(base * 1.1)}`);
+    const pct = Math.floor((bet.reps * 100) / base - 100);
+    return { n: i + 1, exercise_id: o.id, name: o.name, unit: o.unit, reps: bet.reps, base, pct, prize: pariPrize(r, pct) };
+  });
+  const p = { id: seq++, athlete_id: a, start, price: r.pari_price, status: 'active', bets: rows, created_at: stamp() };
+  db.pari.push(p);
+  addLedger({ athlete_id: a, date: start, kind: 'purchase', amount: -p.price, note: `За гранью предела с ${dayLabel(start)}` });
+  return p;
+}
+function pariList(a, from) {
+  return db.pari.filter((p) => p.athlete_id === a && p.start >= from).sort((x, y) => x.start.localeCompare(y.start)).map((p) => {
+    const days = pariDays(a, p.start);
+    return { id: p.id, start: p.start, price: p.price, status: p.status, days,
+      bets: p.bets.map((b) => (p.status === 'active' ? pariState(a, days[b.n - 1]) ?? { ...b, state: 'wait' } : { ...b, state: 'cancelled' })) };
+  });
 }
 
 function setStatus(a, date, status) {
@@ -488,7 +599,8 @@ function setStatus(a, date, status) {
     })),
     streak_from: 3, streak_step: 0.1, streak_max: 1.5,
     miss_penalty_pct: 10, rest_day_price: 4000, purchase_limit_week: 2, phone_price: 150000,
-    allin_price: 2000, allin_up: 0.3, allin_down: 0.7, allin_limit_week: 1 });
+    allin_price: 2000, allin_up: 0.3, allin_down: 0.7, allin_limit_week: 1, allin_streak: 5,
+    pari_streak: 10, pari_price: 5000, pari_p10: 2500, pari_p25: 3500, pari_p50: 5000 });
   // «Выбор» с сегодняшнего дня: повтор того же −10% эффективности, не ниже 50%.
   db.rules.push({ ...db.rules[db.rules.length - 1], valid_from: T, choice_drop: 10, choice_floor: 50 });
 
@@ -868,7 +980,8 @@ export const api = {
   async buyAllin(date) {
     needAthlete();
     const s = streakAt(current.id, today());
-    if (s < ALLIN_STREAK) fail(`«Всё или ничего» открывается при серии от ${ALLIN_STREAK} дней, сейчас ${s}`);
+    const need = rulesFor(today())?.allin_streak ?? 0;
+    if (s < need) fail(`«Всё или ничего» открывается при серии от ${need} дней, сейчас ${s}`);
     return clone(buyAllin(current.id, date));
   },
 
@@ -921,6 +1034,38 @@ export const api = {
     addLedger({ athlete_id: p.athlete_id, date: p.date, kind: 'refund', amount: p.price,
       note: `${p.kind === 'allin' ? 'Отмена «Всё или ничего»' : 'Отмена выходного'} на ${dayLabel(p.date)}` });
     return clone(p);
+  },
+
+  async pariPlan(start) {
+    needAthlete();
+    return clone(pariPlan(current.id, start));
+  },
+
+  async buyPari(start, bets) {
+    needAthlete();
+    return clone(buyPari(current.id, start, bets));
+  },
+
+  async cancelPari(id) {
+    const p = db.pari.find((x) => x.id === id && (x.athlete_id === current.id || current.role === 'admin'));
+    if (!p) fail('Пари не найдено');
+    if (p.status === 'cancelled') fail('Пари уже отменено');
+    if (p.start <= today()) fail('Отменить можно только до начала первого дня');
+    p.status = 'cancelled';
+    addLedger({ athlete_id: p.athlete_id, date: p.start, kind: 'refund', amount: p.price, note: `Отмена «За гранью предела» с ${dayLabel(p.start)}` });
+    return clone(p);
+  },
+
+  async pariList(from, athleteId) {
+    const a = athleteId ?? current.id;
+    if (a !== current.id) needAdmin();
+    return clone(pariList(a, from));
+  },
+
+  async pariDay(date, athleteId) {
+    const a = athleteId ?? current.id;
+    if (a !== current.id) needAdmin();
+    return clone(pariState(a, date));
   },
 
   async sickRequests(a, from) {

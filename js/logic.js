@@ -170,13 +170,6 @@ export function dayMode({ date, clock, startDate, status }) {
 // «Всё или ничего» (ALL IN): модификатор дня из магазина.
 // Множитель дня = серия + up × сделанные упражнения − down × несделанные, не ниже ×0.1 — как allin_state в базе.
 export const ALLIN = 'Всё или ничего';
-// Модификаторы открываются серией и работают, пока она держится: пропустил день — снова закрыто.
-export const ALLIN_STREAK = 7;
-// «За гранью предела» (идея друга, переделанная в пари) — пока только витрина: ставка на 3 тренировки, приз за выигранный день, умножается на серию.
-export const PARI = 'За гранью предела';
-export const PARI_STREAK = 14;
-export const PARI_PRICE = 5000;
-export const PARI_PRIZES = [[10, 2500], [25, 3500], [50, 5000]]; // [ставка выше базы на %, приз]
 const x2 = (v) => Math.round(Number(v) * 100) / 100;
 export const allinMult = (k, up, down, done, miss) => Math.max(0.1, x2(k + up * done - down * miss));
 
@@ -191,6 +184,18 @@ export const ALLIN_STATE = {
   done: { icon: '✅', text: 'сделано' },
   miss: { icon: '❌', text: 'не сделано' },
   wait: { icon: '⏳', text: 'на кону' },
+};
+
+// Модификаторы открываются серией (rules.allin_streak, rules.pari_streak) и работают, пока она держится.
+// «За гранью предела» — пари на 3 тренировки: ставка выше базы на +10/+25/+50% → приз pari_p10/p25/p50.
+export const PARI = 'За гранью предела';
+export const pariPrize = (prizes, pct) => (pct >= 50 ? prizes[2] : pct >= 25 ? prizes[1] : pct >= 10 ? prizes[0] : 0) ?? 0;
+export const PARI_STATE = {
+  wait: { icon: '⏳', text: 'впереди' },
+  check: { icon: '👀', text: 'у генерала' },
+  won: { icon: '🏆', text: 'выиграно' },
+  lost: { icon: '❌', text: 'не вышло' },
+  cancelled: { icon: '↩️', text: 'отменено' },
 };
 
 // Выбор упражнения (пробный режим): в пункте плана pick — два варианта [{id, name, unit, target_reps}],
