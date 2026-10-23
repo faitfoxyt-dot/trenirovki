@@ -2,7 +2,7 @@
 // в памяти вкладки. Правила дня и очков повторяют SQL-функции из supabase/migrations.
 
 import { addDays, isoDow, tallinnNow, shortDate, WD_SHORT } from '../util.js';
-import { swapItems as planSwaps, pickLocked, choiceIds, setNumber, choiceEff, ruleSetPoints } from '../logic.js';
+import { swapItems as planSwaps, pickLocked, choiceIds, setNumber, choiceEff, ruleSetPoints, ALLIN_STREAK } from '../logic.js';
 
 const ADMIN = { id: 'admin', role: 'admin', name: 'Тимур' };
 const ATHLETE = { id: 'athlete', role: 'athlete', name: 'Друг' };
@@ -409,7 +409,7 @@ function buy(a, date) {
   const t = today();
   const r = rulesFor(t);
   if (date <= t) fail('Выходной покупается заранее, до начала дня');
-  if (date > addDays(t, 60)) fail('Можно купить не дальше чем на 60 дней вперёд');
+  if (date > addDays(t, 7)) fail('«Всё или ничего» можно купить не дальше чем на неделю вперёд');
   if (r?.rest_day_price == null) fail('Цену выходного Тимур ещё не задал');
   const st = dayStatusOf(a, date);
   if (st !== 'training') fail('В этот день и так нет тренировки');
@@ -433,7 +433,7 @@ function buyAllin(a, date) {
   const t = today();
   const r = rulesFor(t);
   if (date <= t) fail('«Всё или ничего» покупается заранее, до начала дня');
-  if (date > addDays(t, 60)) fail('Можно купить не дальше чем на 60 дней вперёд');
+  if (date > addDays(t, 7)) fail('«Всё или ничего» можно купить не дальше чем на неделю вперёд');
   if (r?.allin_price == null) fail('Цену «Всё или ничего» Тимур ещё не задал');
   if (dayStatusOf(a, date) !== 'training') fail('В этот день нет тренировки');
   if (db.purchases.some((p) => p.athlete_id === a && p.date === date && p.status === 'active')) fail('На этот день уже есть покупка');
@@ -867,6 +867,8 @@ export const api = {
 
   async buyAllin(date) {
     needAthlete();
+    const s = streakAt(current.id, today());
+    if (s < ALLIN_STREAK) fail(`«Всё или ничего» открывается при серии от ${ALLIN_STREAK} дней, сейчас ${s}`);
     return clone(buyAllin(current.id, date));
   },
 
