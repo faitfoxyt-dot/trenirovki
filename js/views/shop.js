@@ -1,8 +1,8 @@
-// «Магазин»: выходной за очки, «Всё или ничего», «За гранью предела» (пока только витрина), больничный, идеи атлета.
+// «Магазин»: выходной за очки, «Всё или ничего», «Пари с генералом» (пока только витрина), больничный, идеи атлета.
 // Админ видит то же самое, отменяет покупки и отвечает на идеи.
 
 import { html, dayTitle, addDays } from '../util.js';
-import { POINTS, effectiveStatus, ALLIN, allinExample, ALLIN_STREAK, BEYOND, BEYOND_STREAK } from '../logic.js';
+import { POINTS, effectiveStatus, ALLIN, allinExample, ALLIN_STREAK, PARI, PARI_STREAK, PARI_PRICE, PARI_PRIZES } from '../logic.js';
 import { phoneButton, confetti } from './goal.js';
 
 const IDEA = { new: 'на рассмотрении', accepted: 'принята', declined: 'отклонена' };
@@ -88,9 +88,16 @@ export async function render(el, ctx, args, alive) {
       <p class="label">${allinHint(r, aPrice, w.balance, isAdmin)}</p>
     </section>
 
-    <section class="card beyond-card ${w.streak >= BEYOND_STREAK ? '' : 'locked'}">
-      <div class="row"><h2 class="h2">🔥 ${BEYOND}</h2><span class="chip">скоро</span></div>
-      ${streakLock(w.streak, BEYOND_STREAK, isAdmin, 'Серия есть — генерал скоро запустит.')}
+    <section class="card beyond-card ${w.streak >= PARI_STREAK ? '' : 'locked'}">
+      <div class="row"><h2 class="h2">🤝 ${PARI}</h2><span class="chip">${POINTS(PARI_PRICE)} · скоро</span></div>
+      ${streakLock(w.streak, PARI_STREAK, isAdmin, 'Серия есть — генерал скоро запустит.')}
+      <p>Спор с генералом на 3 следующие тренировки. На каждую выбираешь одно упражнение и пишешь, сколько сделаешь за один подход.</p>
+      <ul class="pari-list">
+        <li>Ставка — минимум на 10% больше твоего рекорда в этом упражнении. Если рекорд меньше цели — больше цели.</li>
+        <li>Сделал своё число в тот день — забираешь приз. Не сделал — приза нет, обычные очки остаются.</li>
+      </ul>
+      <div class="pari-prizes">${PARI_PRIZES.map(([pct, prize]) => html`<div><span class="label">ставка +${pct}%</span><b>${prize}</b></div>`)}</div>
+      <p class="label">Приз умножается на твою серию. Подход со ставкой — с видео, его проверяет генерал. Раз в 2 недели, в эти дни без «${ALLIN}».</p>
     </section>
 
     ${purchases.length ? html`<section class="card">
