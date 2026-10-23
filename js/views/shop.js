@@ -97,7 +97,7 @@ export async function render(el, ctx, args, alive) {
         <li>Сделал своё число в тот день — забираешь приз. Не сделал — приза нет, обычные очки остаются.</li>
       </ul>
       <div class="pari-prizes">${PARI_PRIZES.map(([pct, prize]) => html`<div><span class="label">ставка +${pct}%</span><b>${prize}</b></div>`)}</div>
-      <p class="label">Приз умножается на твою серию. Подход со ставкой — с видео, его проверяет генерал. Раз в 2 недели, в эти дни без «${ALLIN}».</p>
+      <p class="label">Приз умножается на твою серию. Подход со ставкой — с видео, его проверяет генерал. Раз в неделю, в эти дни без «${ALLIN}».</p>
     </section>
 
     ${purchases.length ? html`<section class="card">
