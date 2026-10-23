@@ -1,6 +1,7 @@
--- Трекер тренировок · 0023: «Всё или ничего» открывается серией от 7 дней.
+-- Трекер тренировок · 0023: «Всё или ничего» открывается серией от 7 дней и покупается максимум на неделю вперёд.
 -- Купить можно, только пока текущая серия (как в wallet: streak_at на сегодня) не меньше 7.
 -- Пропустил день — серия обнулилась, ALL IN снова закрыт. Уже купленное не трогаем.
+-- Купить можно не дальше чем на 7 дней вперёд (было 60).
 -- Как живая buy_allin, плюс эта проверка. Повторный запуск безопасен.
 
 create or replace function public.buy_allin(p_date date) returns public.purchases
@@ -19,7 +20,7 @@ begin
   if (select role from profiles where id = uid) <> 'athlete' then raise exception 'Покупает атлет'; end if;
   perform lock_athlete(uid);
   if p_date <= today then raise exception '«Всё или ничего» покупается заранее, до начала дня'; end if;
-  if p_date > today + 60 then raise exception 'Можно купить не дальше чем на 60 дней вперёд'; end if;
+  if p_date > today + 7 then raise exception '«Всё или ничего» можно купить не дальше чем на неделю вперёд'; end if;
   if r.allin_price is null then raise exception 'Цену «Всё или ничего» Тимур ещё не задал'; end if;
   s := streak_at(uid, today);
   if s < need then

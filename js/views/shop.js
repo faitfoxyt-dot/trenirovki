@@ -7,6 +7,7 @@ import { phoneButton, confetti } from './goal.js';
 
 const IDEA = { new: 'на рассмотрении', accepted: 'принята', declined: 'отклонена' };
 const AHEAD = 14; // на сколько дней вперёд можно выбрать выходной
+const ALLIN_AHEAD = 7; // «Всё или ничего» — не дальше недели
 
 export async function render(el, ctx, args, alive) {
   const { api, clock, me } = ctx;
@@ -37,7 +38,8 @@ export async function render(el, ctx, args, alive) {
   const canBuy = price !== null && w.balance >= price && options.length > 0;
   const aPrice = r?.allin_price ?? null;
   const allinOpen = w.streak >= ALLIN_STREAK;
-  const canAllin = allinOpen && aPrice !== null && w.balance >= aPrice && options.length > 0;
+  const allinOptions = options.filter((d) => d <= addDays(t, ALLIN_AHEAD));
+  const canAllin = allinOpen && aPrice !== null && w.balance >= aPrice && allinOptions.length > 0;
   const ex = allinExample(r);
   const todaySick = sick.find((s) => s.date === t) ?? null;
   const todayTraining = statusOf(t) === 'training';
@@ -77,8 +79,8 @@ export async function render(el, ctx, args, alive) {
         Каждый подход — с видео. Итог считается, когда день закончился и генерал всё проверил.</p>
       ${isAdmin || !allinOpen ? '' : html`
         <label class="label" for="allin-day">На какой день</label>
-        <select id="allin-day" class="input" ${options.length ? '' : html`disabled`}>
-          ${options.length ? options.map((d) => html`<option value="${d}">${dayTitle(d)}</option>`)
+        <select id="allin-day" class="input" ${allinOptions.length ? '' : html`disabled`}>
+          ${allinOptions.length ? allinOptions.map((d) => html`<option value="${d}">${dayTitle(d)}</option>`)
             : html`<option>Тренировок впереди нет</option>`}
         </select>
         <p class="error" id="allin-error" role="alert"></p>
@@ -229,7 +231,7 @@ function allinHint(r, price, balance, isAdmin) {
   if (price === null) return 'Генерал ещё не поставил цену — пока не продаётся.';
   const parts = [];
   if (!isAdmin && balance < price) parts.push(`Не хватает ${POINTS(price - balance)}.`);
-  parts.push('Купить можно только заранее, до начала дня.');
+  parts.push('Купить можно только заранее, до начала дня, и не дальше чем на неделю вперёд.');
   if (r?.allin_limit_week != null) parts.push(`Не больше ${r.allin_limit_week} в неделю.`);
   return parts.join(' ');
 }

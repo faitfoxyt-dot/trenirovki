@@ -409,7 +409,7 @@ function buy(a, date) {
   const t = today();
   const r = rulesFor(t);
   if (date <= t) fail('Выходной покупается заранее, до начала дня');
-  if (date > addDays(t, 60)) fail('Можно купить не дальше чем на 60 дней вперёд');
+  if (date > addDays(t, 7)) fail('«Всё или ничего» можно купить не дальше чем на неделю вперёд');
   if (r?.rest_day_price == null) fail('Цену выходного Тимур ещё не задал');
   const st = dayStatusOf(a, date);
   if (st !== 'training') fail('В этот день и так нет тренировки');
@@ -433,7 +433,7 @@ function buyAllin(a, date) {
   const t = today();
   const r = rulesFor(t);
   if (date <= t) fail('«Всё или ничего» покупается заранее, до начала дня');
-  if (date > addDays(t, 60)) fail('Можно купить не дальше чем на 60 дней вперёд');
+  if (date > addDays(t, 7)) fail('«Всё или ничего» можно купить не дальше чем на неделю вперёд');
   if (r?.allin_price == null) fail('Цену «Всё или ничего» Тимур ещё не задал');
   if (dayStatusOf(a, date) !== 'training') fail('В этот день нет тренировки');
   if (db.purchases.some((p) => p.athlete_id === a && p.date === date && p.status === 'active')) fail('На этот день уже есть покупка');
