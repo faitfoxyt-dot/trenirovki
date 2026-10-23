@@ -387,6 +387,11 @@ a.chip-link { color: var(--accent); text-decoration: none; border: 1px solid var
 .beyond-card { border-color: var(--bad); background: linear-gradient(160deg, rgba(255, 138, 61, 0.12), transparent 60%), var(--surface); }
 .beyond-card .bar-fill { background: var(--bad); }
 .beyond-card.locked .h2 { opacity: 0.75; }
+.beyond-card p { margin: 0; }
+.pari-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.pari-prizes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.pari-prizes div { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px; border: 1px solid var(--line); border-radius: 10px; }
+.pari-prizes b { font-size: 18px; color: var(--bad); }
 .allin-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .allin-list li { display: flex; align-items: center; gap: 8px; }
 .allin-list li .label { margin-left: auto; }

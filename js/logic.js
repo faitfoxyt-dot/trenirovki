@@ -172,8 +172,11 @@ export function dayMode({ date, clock, startDate, status }) {
 export const ALLIN = 'Всё или ничего';
 // Модификаторы открываются серией и работают, пока она держится: пропустил день — снова закрыто.
 export const ALLIN_STREAK = 7;
-export const BEYOND = 'За гранью предела';
-export const BEYOND_STREAK = 14;
+// «За гранью предела» (идея друга, переделанная в пари) — пока только витрина: ставка на 3 тренировки, приз за выигранный день, умножается на серию.
+export const PARI = 'За гранью предела';
+export const PARI_STREAK = 14;
+export const PARI_PRICE = 5000;
+export const PARI_PRIZES = [[10, 2500], [25, 3500], [50, 5000]]; // [ставка выше базы на %, приз]
 const x2 = (v) => Math.round(Number(v) * 100) / 100;
 export const allinMult = (k, up, down, done, miss) => Math.max(0.1, x2(k + up * done - down * miss));
 
