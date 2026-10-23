@@ -1,4 +1,4 @@
-// «Магазин»: выходной за очки, «Всё или ничего», «Пари с генералом» (пока только витрина), больничный, идеи атлета.
+// «Магазин»: выходной за очки, «Всё или ничего», «За гранью предела» (пока только витрина), больничный, идеи атлета.
 // Админ видит то же самое, отменяет покупки и отвечает на идеи.
 
 import { html, dayTitle, addDays } from '../util.js';
@@ -89,7 +89,7 @@ export async function render(el, ctx, args, alive) {
     </section>
 
     <section class="card beyond-card ${w.streak >= PARI_STREAK ? '' : 'locked'}">
-      <div class="row"><h2 class="h2">🤝 ${PARI}</h2><span class="chip">${POINTS(PARI_PRICE)} · скоро</span></div>
+      <div class="row"><h2 class="h2">🔥 ${PARI}</h2><span class="chip">${POINTS(PARI_PRICE)} · скоро</span></div>
       ${streakLock(w.streak, PARI_STREAK, isAdmin, 'Серия есть — генерал скоро запустит.')}
       <p>Спор с генералом на 3 следующие тренировки. На каждую выбираешь одно упражнение и пишешь, сколько сделаешь за один подход.</p>
       <ul class="pari-list">
