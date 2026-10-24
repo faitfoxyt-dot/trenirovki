@@ -4,6 +4,7 @@
 import { html, dayTitle, addDays } from '../util.js';
 import { POINTS, effectiveStatus, ALLIN, allinExample, PARI, PARI_STATE, pariPrize, amount, unitOf } from '../logic.js';
 import { phoneButton, confetti } from './goal.js';
+import { restTodayPrice } from '../logic.js';
 
 const IDEA = { new: 'на рассмотрении', accepted: 'принята', declined: 'отклонена' };
 const AHEAD = 14; // на сколько дней вперёд можно выбрать выходной
@@ -49,6 +50,9 @@ export async function render(el, ctx, args, alive) {
   const ex = allinExample(r);
   const todaySick = sick.find((s) => s.date === t) ?? null;
   const todayTraining = statusOf(t) === 'training';
+  const tPrice = restTodayPrice(r, w.balance);
+  const todayPari = pariNow.some((p) => p.days.includes(t));
+  const canToday = tPrice !== null && todayTraining && !todayPari && w.balance >= tPrice;
 
   el.innerHTML = String(html`
     <header class="stack-8">
@@ -75,6 +79,17 @@ export async function render(el, ctx, args, alive) {
         <button type="button" class="btn" id="buy" ${canBuy ? '' : html`disabled`}>Купить${price !== null ? ` за ${price}` : ''}</button>`}
       <p class="label">${buyHint(r, price, w.balance, isAdmin)}</p>
     </section>
+
+    ${tPrice !== null ? html`<section class="card today-rest-card">
+      <div class="row"><h2 class="h2">🆘 Выходной на сегодня</h2><span class="chip">${POINTS(tPrice)}</span></div>
+      <p>Не успеваешь сегодня? Бери выходной прямо сейчас. Серия сохранится, штрафа за пропуск не будет.</p>
+      <p class="label">Цена — ${r.rest_today_pct ?? 0}% от баланса, но не меньше ${POINTS(r.rest_today_min ?? 0)}. Купить можно до полуночи. Отменить нельзя. Подходы, которые уже сделал сегодня, остаются с очками.</p>
+      ${statusOf(t) === 'bought' ? html`<p class="ok strong">✅ Сегодня выходной. Отдыхай.</p>`
+        : isAdmin ? '' : html`
+        <p class="error" id="today-error" role="alert"></p>
+        <button type="button" class="btn" id="buy-today" ${canToday ? '' : html`disabled`}>Взять выходной сегодня за ${tPrice}</button>
+        <p class="label">${todayHint(todayTraining, todayPari, tPrice, w.balance)}</p>`}
+    </section>` : ''}
 
     <section class="card allin-card">
       <div class="row"><h2 class="h2">🎲 ${ALLIN}</h2><span class="chip">${aPrice !== null ? POINTS(aPrice) : 'не продаётся'}</span></div>
@@ -170,6 +185,17 @@ export async function render(el, ctx, args, alive) {
     try {
       await api.buyRestDay(date);
       ctx.toast(`Выходной на ${dayTitle(date)} куплен`);
+      ctx.refresh();
+    } catch (e) { err.textContent = e.message; }
+  });
+
+  el.querySelector('#buy-today')?.addEventListener('click', async () => {
+    const err = el.querySelector('#today-error');
+    err.textContent = '';
+    if (!confirm(`Взять выходной на сегодня за ${POINTS(tPrice)}? Отменить будет нельзя.`)) return;
+    try {
+      await api.buyRestToday();
+      ctx.toast('Сегодня выходной. Серия сохранена');
       ctx.refresh();
     } catch (e) { err.textContent = e.message; }
   });
@@ -286,6 +312,13 @@ function buyHint(r, price, balance, isAdmin) {
   parts.push('Купить можно только заранее, до начала дня. Отменить — тоже до начала дня, очки вернутся.');
   if (r?.purchase_limit_week != null) parts.push(`Не больше ${r.purchase_limit_week} в неделю.`);
   return parts.join(' ');
+}
+
+function todayHint(training, pari, price, balance) {
+  if (!training) return 'Сегодня и так нет тренировки.';
+  if (pari) return 'Сегодня идёт «За гранью предела» — выходной не купить.';
+  if (balance < price) return `Не хватает ${POINTS(price - balance)}.`;
+  return '';
 }
 
 // Купленное пари: 3 тренировки, ставки и что с ними.

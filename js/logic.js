@@ -169,6 +169,12 @@ export function dayMode({ date, clock, startDate, status }) {
 
 // «Всё или ничего» (ALL IN): модификатор дня из магазина.
 // Множитель дня = серия + up × сделанные упражнения − down × несделанные, не ниже ×0.1 — как allin_state в базе.
+// Выходной на сегодня: процент баланса, но не меньше минимума. null — не продаётся. Как rest_today_price в SQL.
+export function restTodayPrice(r, balance) {
+  if (r?.rest_today_pct == null && r?.rest_today_min == null) return null;
+  return Math.max(r.rest_today_min ?? 0, Math.round((Math.max(balance, 0) * (r.rest_today_pct ?? 0)) / 100));
+}
+
 export const ALLIN = 'Всё или ничего';
 const x2 = (v) => Math.round(Number(v) * 100) / 100;
 export const allinMult = (k, up, down, done, miss) => Math.max(0.1, x2(k + up * done - down * miss));

@@ -211,6 +211,10 @@ export const api = {
     return check(await sb.rpc('buy_rest_day', { p_date: date }));
   },
 
+  async buyRestToday() {
+    return check(await sb.rpc('buy_rest_today'));
+  },
+
   async buyAllin(date) {
     return check(await sb.rpc('buy_allin', { p_date: date }));
   },
