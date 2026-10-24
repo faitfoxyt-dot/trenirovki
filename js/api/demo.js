@@ -2,7 +2,7 @@
 // в памяти вкладки. Правила дня и очков повторяют SQL-функции из supabase/migrations.
 
 import { addDays, isoDow, tallinnNow, shortDate, WD_SHORT } from '../util.js';
-import { swapItems as planSwaps, pickLocked, choiceIds, setNumber, choiceEff, ruleSetPoints } from '../logic.js';
+import { swapItems as planSwaps, pickLocked, choiceIds, setNumber, choiceEff, ruleSetPoints, restTodayPrice } from '../logic.js';
 
 const ADMIN = { id: 'admin', role: 'admin', name: 'Тимур' };
 const ATHLETE = { id: 'athlete', role: 'athlete', name: 'Друг' };
@@ -10,7 +10,7 @@ const ATHLETE = { id: 'athlete', role: 'athlete', name: 'Друг' };
 const RULE_KEYS = ['calibration', 'per_exercise', 'streak_from', 'streak_step', 'streak_max',
   'miss_penalty_pct', 'rest_day_price', 'purchase_limit_week', 'phone_price',
   'allin_price', 'allin_up', 'allin_down', 'allin_limit_week', 'choice_drop', 'choice_floor',
-  'allin_streak', 'pari_streak', 'pari_price', 'pari_p10', 'pari_p25', 'pari_p50'];
+  'allin_streak', 'pari_streak', 'pari_price', 'pari_p10', 'pari_p25', 'pari_p50', 'rest_today_pct', 'rest_today_min'];
 
 // Строка каталога: swap — замена по просьбе (id) и её цель.
 const ex = (id, name, sets, target, swap = null, swapTarget = null, unit = 'reps') => ({
@@ -429,7 +429,7 @@ function buy(a, date) {
   }
   if (pariBetAt(a, date)) fail('В этот день идёт «За гранью предела» — выходной не купить');
   if (r.purchase_limit_week != null) {
-    const cnt = db.purchases.filter((p) => p.athlete_id === a && p.status === 'active' && p.kind === 'rest' && weekStart(p.date) === weekStart(date)).length;
+    const cnt = db.purchases.filter((p) => p.athlete_id === a && p.status === 'active' && p.kind === 'rest' && !p.same_day && weekStart(p.date) === weekStart(date)).length;
     if (cnt >= r.purchase_limit_week) fail(`На этой неделе лимит: ${r.purchase_limit_week} вых.`);
   }
   const bal = balance(a);
@@ -438,6 +438,27 @@ function buy(a, date) {
   db.purchases.push(p);
   putStatus(a, date, 'bought');
   addLedger({ athlete_id: a, date, kind: 'purchase', amount: -p.price, note: `Выходной на ${dayLabel(date)}` });
+  return p;
+}
+
+// Выходной на сегодня: дороже, цена — процент баланса, но не меньше минимума. Отменить нельзя.
+function buyToday(a) {
+  const t = today();
+  const r = rulesFor(t);
+  const price = restTodayPrice(r, balance(a));
+  if (price == null) fail('Выходной на сегодня генерал ещё не продаёт');
+  if (dayStatusOf(a, t) !== 'training') fail('Сегодня и так нет тренировки');
+  if (db.purchases.some((p) => p.athlete_id === a && p.date === t && p.status === 'active')) {
+    fail('Сегодня «Всё или ничего» — выходной не купить');
+  }
+  if (pariBetAt(a, t)) fail('Сегодня идёт «За гранью предела» — выходной не купить');
+  if (dayDone(a, t)) fail('Сегодня всё уже сделано — выходной не нужен');
+  const bal = balance(a);
+  if (bal < price) fail(`Не хватает очков: нужно ${price}, на балансе ${bal}`);
+  const p = { id: seq++, athlete_id: a, date: t, price, prev_status: 'training', status: 'active', kind: 'rest', same_day: true, created_at: stamp() };
+  db.purchases.push(p);
+  putStatus(a, t, 'bought');
+  addLedger({ athlete_id: a, date: t, kind: 'purchase', amount: -price, note: `Выходной на сегодня, ${dayLabel(t)}` });
   return p;
 }
 
@@ -598,7 +619,7 @@ function setStatus(a, date, status) {
       return [id, { rep: Math.round((k / t) * 100) / 100, over: Math.round((k / 4 / cap) * 100) / 100, cap }];
     })),
     streak_from: 3, streak_step: 0.1, streak_max: 1.5,
-    miss_penalty_pct: 10, rest_day_price: 4000, purchase_limit_week: 2, phone_price: 150000,
+    miss_penalty_pct: 10, rest_day_price: 6000, rest_today_pct: 15, rest_today_min: 10000, purchase_limit_week: 2, phone_price: 150000,
     allin_price: 2000, allin_up: 0.3, allin_down: 0.7, allin_limit_week: 1, allin_streak: 5,
     pari_streak: 10, pari_price: 5000, pari_p10: 2500, pari_p25: 3500, pari_p50: 5000 });
   // «Выбор» с сегодняшнего дня: повтор того же −10% эффективности, не ниже 50%.
@@ -975,6 +996,11 @@ export const api = {
   async buyRestDay(date) {
     needAthlete();
     return clone(buy(current.id, date));
+  },
+
+  async buyRestToday() {
+    needAthlete();
+    return clone(buyToday(current.id));
   },
 
   async buyAllin(date) {
