@@ -3,8 +3,8 @@
 
 import { html, dayTitle, addDays } from '../util.js';
 import { POINTS, effectiveStatus, ALLIN, allinExample, PARI, PARI_STATE, pariPrize, amount, unitOf } from '../logic.js';
-import { restTodayPrice } from '../logic.js';
 import { phoneButton, confetti } from './goal.js';
+import { restTodayPrice } from '../logic.js';
 
 const IDEA = { new: 'на рассмотрении', accepted: 'принята', declined: 'отклонена' };
 const AHEAD = 14; // на сколько дней вперёд можно выбрать выходной
