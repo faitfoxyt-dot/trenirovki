@@ -2,7 +2,8 @@
 // Админ видит то же самое, отменяет покупки и отвечает на идеи.
 
 import { html, dayTitle, addDays } from '../util.js';
-import { POINTS, effectiveStatus, restTodayPrice, ALLIN, allinExample, PARI, PARI_STATE, pariPrize, amount, unitOf } from '../logic.js';
+import { POINTS, effectiveStatus, ALLIN, allinExample, PARI, PARI_STATE, pariPrize, amount, unitOf } from '../logic.js';
+import { restTodayPrice } from '../logic.js';
 import { phoneButton, confetti } from './goal.js';
 
 const IDEA = { new: 'на рассмотрении', accepted: 'принята', declined: 'отклонена' };
