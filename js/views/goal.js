@@ -104,7 +104,7 @@ export async function render(el, ctx, args, alive) {
 
     <section class="card">
       <h2 class="h2">Как это работает</h2>
-      ${howItWorks(r)}
+      ${howItWorks(r, { roulette: ctx.settings?.roulette?.on })}
       ${!isAdmin && ctx.settings?.show_rules ? html`<a class="ghost link" href="#/rules">Все цифры — в правилах →</a>` : ''}
     </section>
 
@@ -259,8 +259,8 @@ function rowHtml(x, isAdmin) {
 }
 
 // «Как это работает» простыми словами. Видно всегда, даже в тестовом периоде и при скрытых правилах.
-// Цифры серии и штрафа — только когда очки уже идут и numbers не выключен.
-export function howItWorks(r, { numbers = true } = {}) {
+// Цифры серии и штрафа — только когда очки уже идут и numbers не выключен. roulette — колесо дня включено.
+export function howItWorks(r, { numbers = true, roulette = false } = {}) {
   const cal = isCalibration(r);
   const nums = numbers && !cal;
   const n = (v) => (v === null || v === undefined ? null : Number(v));
@@ -281,6 +281,10 @@ export function howItWorks(r, { numbers = true } = {}) {
     { icon: '🔥', title: 'Серия', body: html`
       <p>Делаешь весь план каждый тренировочный день подряд — серия растёт. ${streak}</p>
       <p class="label">Выходной и больничный серию не ломают. У тестового периода своя серия: в настоящую она не идёт и её не ломает.</p>` },
+    ...(roulette ? [{ icon: '🎰', title: 'Колесо дня', body: html`
+      <p>Каждый тренировочный день сначала крутишь колесо на «Сегодня». Выпавшее число прибавляется к множителю очков за подходы:
+        бывает плюс до ×2, бывает и минус. В среднем выходит в плюс.</p>
+      <p class="label">Особые сектора: «Ещё раз», «Звезда» с мини-игрой и «Револьвер» — там сам решаешь, рисковать или нет.</p>` }] : []),
     { icon: '⚠️', title: 'Пропуск', body: html`
       <p>Не сделал хоть один подход из плана — день пропущен. Серия начинается заново, и сгорает ${penalty}.</p>
       <p class="label">Подход на 0 повторов — не подход.</p>` },

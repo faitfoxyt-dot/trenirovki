@@ -3,6 +3,7 @@
 
 import { addDays, isoDow, tallinnNow, shortDate, WD_SHORT } from '../util.js';
 import { swapItems as planSwaps, pickLocked, choiceIds, setNumber, choiceEff, ruleSetPoints, restTodayPrice } from '../logic.js';
+import { OUTCOMES, outcome, rouletteCfg, pickKey, addText, dayMult, rouletteProblems } from '../roulette-data.js';
 
 const ADMIN = { id: 'admin', role: 'admin', name: 'Тимур' };
 const ATHLETE = { id: 'athlete', role: 'athlete', name: 'Друг' };
@@ -68,6 +69,7 @@ const db = {
   pari: [], // «За гранью предела»: {id, athlete_id, start, price, status, bets: [{n, exercise_id, name, unit, reps, base, pct, prize}]}
   events: [], // события дня: {athlete_id, date, title, game, score} — score null, пока не сыграл
   videos: [], // видео из Telegram, к которым ещё нет повторов: {athlete_id, date, no, url}
+  spins: [], // «Русская рулетка»: {athlete_id, date, chain, key, add, gun, spun_at, decided_at}
 };
 let current = ATHLETE;
 let seq = 100;
@@ -79,6 +81,14 @@ const today = () => frozen ?? tallinnNow().today;
 const stamp = () => new Date().toISOString();
 const dayLabel = (date) => `${WD_SHORT[isoDow(date) - 1]}, ${shortDate(date)}`;
 const weekStart = (date) => addDays(date, 1 - isoDow(date));
+
+// Для скринов концепта: ?roulette=jackpot или ?roulette=respin,double и ?gun=bang|click — что выпадет в демо,
+// ?allin=0 — сегодня без «Всё или ничего».
+const FORCE = (() => {
+  const q = new URLSearchParams(globalThis.location?.search ?? '');
+  const chain = (q.get('roulette') ?? '').split(',').filter((k) => OUTCOMES.some((o) => o.key === k)).slice(0, 2);
+  return { chain: chain.length ? chain : null, gun: ['bang', 'click'].includes(q.get('gun')) ? q.get('gun') : null, allin: q.get('allin') !== '0' };
+})();
 
 function clock() {
   const now = tallinnNow();
@@ -297,6 +307,48 @@ function eventApply(a, date) {
     note: e ? `${have ? 'Пересмотр: ' : ''}${e.title}: ${e.score} из 5 · очки дня ×${(1 + e.score / 10).toFixed(1)}` : 'Событие убрано' });
 }
 
+// «Русская рулетка» — как roulette_state в базе. null — в этот день колеса нет.
+// m — множитель до рулетки (серия или «Всё или ничего»), mult — после, bonus — сколько рулетка даёт сверху.
+// need — сегодня друг ещё должен крутить колесо или решить с револьвером.
+function rouletteState(a, date) {
+  const sp = db.spins.find((x) => x.athlete_id === a && x.date === date);
+  const cfg = rouletteCfg(db.settings.roulette);
+  const t = today();
+  const open = cfg.on && date === t && dayStatusOf(a, date) === 'training' && !(db.settings.start_date && date < db.settings.start_date);
+  if (!sp && !open) return null;
+  const test = isTestDay(date);
+  const r = rulesFor(test ? t : date);
+  const al = allinState(a, date);
+  const rows = test ? db.theory.filter((x) => x.athlete_id === a && x.date === date)
+    : db.logs.filter((l) => l.athlete_id === a && l.date === date && l.points != null);
+  const points = rows.reduce((n, x) => n + x.points, 0);
+  const base = rows.reduce((n, x) => n + x.points / Number(x.mult ?? 1), 0);
+  const k = rows.length ? Math.max(...rows.map((x) => Number(x.mult ?? 1))) : streakMult(r, dayStreak(a, date));
+  const m = al ? al.mult : k;
+  const add = Number(sp?.add ?? 0);
+  const mult = dayMult(m, add, cfg.floor);
+  const pending = db.logs.some((l) => l.athlete_id === a && l.date === date && l.review === 'pending' && l.claimed != null);
+  const applied = db.ledger.filter((x) => x.athlete_id === a && x.date === date && x.kind === 'roulette').reduce((n, x) => n + x.rating, 0);
+  return { date, need: Boolean(open && (!sp || sp.gun === 'offer')), spin: sp ? clone(sp) : null, k, allin: al ? al.mult : null, m,
+    mult, floored: cfg.floor != null && m + add < cfg.floor, base: Math.round(base), points, bonus: Math.round(base * (mult - m)),
+    final: date < t && !pending && (!al || al.final), applied, test };
+}
+
+const GUN_NOTE = { click: ': щёлк, пусто', bang: ': выстрел', pass: ' убран' };
+
+// Записать разницу между тем, что рулетка должна дать, и тем, что уже в журнале, — как roulette_apply.
+function rouletteApply(a, date) {
+  const s = rouletteState(a, date);
+  if (!s?.spin || s.test) return;
+  const want = s.final && dayStatusOf(a, date) === 'training' ? s.bonus : 0;
+  const delta = want - s.applied;
+  if (!delta) return;
+  const o = outcome(s.spin.key);
+  addLedger({ athlete_id: a, date, kind: 'roulette', amount: Math.max(delta, -balance(a)), rating: delta,
+    note: want ? `${s.applied ? 'Пересмотр: ' : ''}🎰 Рулетка: ${o.icon} ${o.name}${GUN_NOTE[s.spin.gun] ?? ''} ${addText(s.spin.add)} · очки за подходы ×${s.mult}`
+      : '🎰 Рулетка: день не засчитан' });
+}
+
 function awardSet(l) {
   let r = rulesFor(l.date);
   const cal = isCal(r);
@@ -361,6 +413,7 @@ function settle(a) {
 
   [...new Set(db.purchases.filter((p) => p.athlete_id === a && p.kind === 'allin' && p.date < t && p.date >= addDays(t, -60))
     .map((p) => p.date))].forEach((d) => allinApply(a, d));
+  db.spins.filter((x) => x.athlete_id === a && x.date < t && x.date >= addDays(t, -60)).forEach((x) => rouletteApply(a, x.date));
   [...new Set([...db.events.filter((e) => e.athlete_id === a).map((e) => e.date),
     ...db.ledger.filter((x) => x.athlete_id === a && x.kind === 'event').map((x) => x.date)])]
     .filter((d) => d < t && d >= addDays(t, -60)).forEach((d) => eventApply(a, d));
@@ -680,7 +733,7 @@ function setStatus(a, date, status) {
   // «Всё или ничего» и на сегодня — куплено вчера.
   frozen = addDays(T, -1);
   if (dayStatusOf(a, T) !== 'training') putStatus(a, T, 'training');
-  try { buyAllin(a, T); } catch { /* лимит недели уже занят — не страшно */ }
+  if (FORCE.allin) try { buyAllin(a, T); } catch { /* лимит недели уже занят — не страшно */ }
   frozen = null;
   // Теория для тестовой недели — как пересчёт в save_rules.
   db.logs.filter((l) => isCal(rulesFor(l.date))).forEach(awardSet);
@@ -732,6 +785,18 @@ function setStatus(a, date, status) {
   // Событие понедельника: звезда на ниточке, мини-игра «Идеальный повтор» на ×1.5.
   db.events.push({ athlete_id: a, date: T, title: 'Событие понедельника', game: 'a', score: null, done: false });
   db.events.push({ athlete_id: a, date: addDays(T, -2), title: 'Событие субботы', game: 'b', score: 4, done: true });
+  // «Русская рулетка» (концепт): колесо включено, последние тренировки друг крутил его сам. Вчера — джекпот, подходы ждут проверки.
+  db.settings.roulette = { ...rouletteCfg(null), on: true };
+  const wheel = rouletteCfg(db.settings.roulette);
+  const spun = ['jackpot', 'misfire', 'double', 'revolver', 'hit'];
+  db.days.filter((d) => d.athlete_id === a && d.date < T && d.status === 'training' && db.logs.some((l) => l.athlete_id === a && l.date === d.date))
+    .sort((x, y) => y.date.localeCompare(x.date)).slice(0, spun.length)
+    .forEach((d, i) => {
+      const key = spun[i];
+      const gun = key === 'revolver';
+      db.spins.push({ athlete_id: a, date: d.date, chain: [key], key, add: gun ? wheel.gun.win : wheel.items[key].add,
+        gun: gun ? 'click' : null, spun_at: stamp(), decided_at: gun ? stamp() : null });
+    });
   settle(a);
 }());
 
@@ -1039,6 +1104,61 @@ export const api = {
     e.score = Math.max(e.score ?? 0, Math.min(5, Math.round(score ?? 0)));
     e.done = Boolean(done);
     return this.eventDay(date);
+  },
+
+  // ── «Русская рулетка» ──
+  async rouletteDay(date, athleteId) {
+    const a = athleteId ?? current.id;
+    if (a !== current.id) needAdmin();
+    const s = rouletteState(a, date);
+    if (s?.test && current.role !== 'admin') Object.assign(s, { points: null, bonus: null });
+    return clone(s);
+  },
+
+  // Колесо крутится в базе: шансы из настроек. «Ещё раз» — второй сектор (уже без «ещё раз»),
+  // звезды нет, если событие на сегодня уже есть, револьвер ждёт решения.
+  async spinRoulette() {
+    needAthlete();
+    const a = current.id;
+    const t = today();
+    const s = rouletteState(a, t);
+    if (s?.spin) fail('Колесо сегодня уже крутили');
+    if (!s?.need) fail('Сегодня колеса нет');
+    const cfg = rouletteCfg(db.settings.roulette);
+    const no = db.events.some((e) => e.athlete_id === a && e.date === t) && !FORCE.chain ? ['star'] : [];
+    const chain = FORCE.chain ? [...FORCE.chain] : [pickKey(cfg, no)];
+    if (chain[0] !== 'respin') chain.splice(1);
+    else if (chain.length < 2 || chain[1] === 'respin') chain[1] = pickKey(cfg, [...no, 'respin']);
+    const key = chain[chain.length - 1];
+    const o = outcome(key);
+    db.spins.push({ athlete_id: a, date: t, chain, key, add: key === 'revolver' ? null : o.special ? 0 : Number(cfg.items[key].add),
+      gun: key === 'revolver' ? 'offer' : null, spun_at: stamp(), decided_at: null });
+    if (key === 'star') {
+      db.events = db.events.filter((e) => !(e.athlete_id === a && e.date === t && e.score === null));
+      db.events.push({ athlete_id: a, date: t, title: 'Звезда с колеса', game: 'a', score: null, done: false });
+    }
+    return this.rouletteDay(t);
+  },
+
+  // Револьвер: жать на курок (1 патрон из chambers) или убрать — тогда 0.
+  async pullTrigger(pull) {
+    needAthlete();
+    const t = today();
+    const sp = db.spins.find((x) => x.athlete_id === current.id && x.date === t);
+    if (sp?.gun !== 'offer') fail('Револьвера сегодня нет');
+    const g = rouletteCfg(db.settings.roulette).gun;
+    const bang = pull && (FORCE.gun ? FORCE.gun === 'bang' : Math.random() < 1 / g.chambers);
+    Object.assign(sp, { gun: !pull ? 'pass' : bang ? 'bang' : 'click', add: !pull ? 0 : bang ? g.lose : g.win, decided_at: stamp() });
+    return this.rouletteDay(t);
+  },
+
+  async saveRoulette(p) {
+    needAdmin();
+    const cfg = rouletteCfg(p);
+    const bad = rouletteProblems(cfg);
+    if (bad.length) fail(`Рулетка: ${bad.join('; ')}`);
+    db.settings.roulette = cfg;
+    return clone(cfg);
   },
 
   async allinDay(date, athleteId) {

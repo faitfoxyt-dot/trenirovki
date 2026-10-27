@@ -4,6 +4,7 @@
 import { html } from '../util.js';
 import { POINTS, signed, amount, isSec, cxLetter, unitText, ruleSetPoints } from '../logic.js';
 import { howItWorks } from './goal.js';
+import { rouletteRules, wireRouletteRules } from './roulette.js';
 
 // Числа у каждого упражнения свои.
 // У упражнений на время те же поля, только за секунду.
@@ -123,6 +124,8 @@ export async function render(el, ctx, args, alive) {
       ${g.note ? html`<p class="label">${g.note}</p>` : ''}
     </section>`)}
 
+    ${rouletteRules(ctx.settings, isAdmin)}
+
     <section class="card">
       <h2 class="h2">Пример</h2>
       <p class="label" id="example" aria-live="polite"></p>
@@ -132,6 +135,8 @@ export async function render(el, ctx, args, alive) {
     <button type="button" class="btn" id="save">Сохранить правила</button>
     <p class="label ok center" id="saved" aria-live="polite"></p>` : ''}
   `);
+
+  wireRouletteRules(el, ctx);
 
   const num = (input, f) => {
     const raw = input.value.trim().replace(/\s/g, '').replace(',', '.');
