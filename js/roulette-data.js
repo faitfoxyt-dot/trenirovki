@@ -94,11 +94,15 @@ export function toneOf(key, add) {
   return v <= -0.5 ? 'awful' : 'bad';
 }
 
-// Множитель дня после рулетки: база (серия или «Всё или ничего») + прибавка, но не ниже пола.
+// Множитель дня после рулетки: база (серия или «Всё или ничего») + прибавка. Минус не опускает ниже пола,
+// но и не поднимает до пола день, где «Всё или ничего» уже ниже. Как roulette_state в базе.
 export const dayMult = (m, add, floor) => {
   const v = round2(Number(m) + Number(add ?? 0));
-  return floor == null ? v : Math.max(Number(floor), v);
+  return floor == null ? v : Math.max(Math.min(Number(m), Number(floor)), v);
 };
+
+// Сработал пол: без него множитель дня был бы ниже.
+export const isFloored = (m, add, floor) => floor != null && round2(Number(m) + Number(add ?? 0)) < Math.min(Number(m), Number(floor));
 
 // Что не так с настройками — как проверка в save_roulette. Пусто — можно сохранять.
 export function rouletteProblems(raw) {

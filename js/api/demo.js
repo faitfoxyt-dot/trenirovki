@@ -3,7 +3,7 @@
 
 import { addDays, isoDow, tallinnNow, shortDate, WD_SHORT } from '../util.js';
 import { swapItems as planSwaps, pickLocked, choiceIds, setNumber, choiceEff, ruleSetPoints, restTodayPrice } from '../logic.js';
-import { OUTCOMES, outcome, rouletteCfg, pickKey, addText, dayMult, rouletteProblems } from '../roulette-data.js';
+import { OUTCOMES, outcome, rouletteCfg, pickKey, addText, dayMult, isFloored, rouletteProblems } from '../roulette-data.js';
 
 const ADMIN = { id: 'admin', role: 'admin', name: 'Тимур' };
 const ATHLETE = { id: 'athlete', role: 'athlete', name: 'Друг' };
@@ -330,7 +330,7 @@ function rouletteState(a, date) {
   const pending = db.logs.some((l) => l.athlete_id === a && l.date === date && l.review === 'pending' && l.claimed != null);
   const applied = db.ledger.filter((x) => x.athlete_id === a && x.date === date && x.kind === 'roulette').reduce((n, x) => n + x.rating, 0);
   return { date, need: Boolean(open && (!sp || sp.gun === 'offer')), spin: sp ? clone(sp) : null, k, allin: al ? al.mult : null, m,
-    mult, floored: cfg.floor != null && m + add < cfg.floor, base: Math.round(base), points, bonus: Math.round(base * (mult - m)),
+    mult, floored: isFloored(m, add, cfg.floor), base: Math.round(base), points, bonus: Math.round(base * (mult - m)),
     final: date < t && !pending && (!al || al.final), applied, test };
 }
 

@@ -5,7 +5,7 @@
 
 import { html, raw } from '../util.js';
 import { confetti } from './goal.js';
-import { ROULETTE, OUTCOMES, outcome, rouletteCfg, rouletteEV, addText, toneOf, dayMult, chanceSum, rouletteProblems,
+import { ROULETTE, OUTCOMES, outcome, rouletteCfg, rouletteEV, addText, toneOf, dayMult, isFloored, chanceSum, rouletteProblems,
   rouletteRange } from '../roulette-data.js';
 
 const C = 200;      // центр колеса во viewBox 400×400
@@ -517,7 +517,7 @@ export function openRoulette(ctx, s, { gun = false } = {}) {
 
   // Множитель дня после рулетки: база + прибавка, но не ниже пола.
   function multBlock(st, add, note = '') {
-    const floored = cfg.floor != null && Number(st.m) + Number(add ?? 0) < cfg.floor;
+    const floored = isFloored(st.m, add, cfg.floor);
     return html`<div class="rl-res-mult">
       <span class="label">${st.test ? 'Тестовый период: множитель для примера' : 'Сегодня очки за подходы'}</span>
       <b>×${dayMult(st.m, add, cfg.floor)}</b>
