@@ -2,7 +2,7 @@
 // отклонить, комментарий. Очки за подход база считает в момент решения.
 
 import { html, dayTitle } from '../util.js';
-import { MUSCLES, caption, setPoints, signed, multTag, amount, unitOf, unitText, ALLIN, PARI, swapItems, setNumber } from '../logic.js';
+import { MUSCLES, caption, setPoints, signed, multTag, amount, unitOf, unitText, ALLIN, PARI, pariTimes, swapItems, setNumber } from '../logic.js';
 
 const DECISIONS = [
   { key: 'accepted', label: 'Принять' },
@@ -119,8 +119,8 @@ export async function render(el, ctx, args, alive) {
     </div>
     ${g.logs.map((l) => html`<section class="card review-card" data-id="${l.id}" data-group="${g.key}" data-unit="${exUnit(l.exercise_id)}">
       <h2 class="h2">${exName(l.exercise_id)} · подход ${l.set_no}</h2>
-      ${bets.get(g.key)?.exercise_id === l.exercise_id ? html`<p class="pari-note">🔥 Ставка «${PARI}»: ${amount(bets.get(g.key).reps, exUnit(l.exercise_id))}
-        за подход. Засчитаешь столько или больше — друг выигрывает приз ${bets.get(g.key).prize} ×${bets.get(g.key).mult}.</p>` : ''}
+      ${bets.get(g.key)?.exercise_id === l.exercise_id ? html`<p class="pari-note">🔥 Ставка «${PARI}»: ${pariTimes(bets.get(g.key).reps, exUnit(l.exercise_id))}
+        за подход. Примешь столько или больше — друг получит приз ${bets.get(g.key).prize}.</p>` : ''}
       <p class="label">Заявлено: <b class="em">${amount(l.claimed, exUnit(l.exercise_id))}</b> · видео ${l.video_url
         ? html`<a href="${l.video_url}" target="_blank" rel="noopener">▶ смотреть</a>` : l.has_video ? 'есть' : html`<span class="bad">нет</span>`}<br>
         Подпись в Telegram: ${l.no ? `#${l.no}` : caption(l.date, exName(l.exercise_id), l.set_no)}</p>

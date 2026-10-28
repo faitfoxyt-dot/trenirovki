@@ -548,6 +548,9 @@ const pariRecord = (a, id) => Math.max(0, ...db.logs.filter((l) => l.athlete_id 
 const pariOptions = (a, date) => (findDay(a, date)?.plan ?? currentPlan(a, date)).flatMap((x) => x.pick ?? [x])
   .map((y) => ({ id: y.id, name: y.name, unit: y.unit ?? 'reps', target_reps: y.target_reps ?? null }));
 const pariBase = (a, o) => Math.max(pariRecord(a, o.id), o.target_reps ?? 0, 1);
+// Ставка: +10/+25/+50% к базе, вверх до целого — как в pari_plan.
+const PARI_TIERS = [10, 25, 50];
+const pariReps = (base, tier) => Math.ceil((base * (100 + tier)) / 100);
 function pariPrize(r, pct) {
   if (pct >= 50) return r?.pari_p50 ?? 0;
   if (pct >= 25) return r?.pari_p25 ?? 0;
@@ -570,8 +573,7 @@ function pariState(a, date) {
   if ((best ?? 0) >= b.reps) state = 'won';
   else if (logs.some((l) => l.review === 'pending' && l.claimed >= b.reps)) state = 'check';
   else if (date < today()) state = 'lost';
-  const mult = streakMult(rulesFor(date), dayStreak(a, date));
-  return { ...b, date, best, state, mult, points: Math.round(b.prize * mult), test: isTestDay(date) };
+  return { ...b, date, best, state, points: b.prize, test: isTestDay(date) };
 }
 function pariApply(a, date) {
   if (isTestDay(date)) return;
@@ -582,14 +584,15 @@ function pariApply(a, date) {
   if (!delta) return;
   addLedger({ athlete_id: a, date, kind: 'pari', amount: Math.max(delta, -balance(a)), rating: delta,
     note: want === 0 ? 'За гранью предела: приз снят'
-      : `${have ? 'Пересмотр: ' : ''}За гранью предела: ${s.name} ${s.best} при ставке ${s.reps} · приз ${s.prize} ×${s.mult}` });
+      : `${have ? 'Пересмотр: ' : ''}За гранью предела: ${s.name} ${s.best} при ставке ${s.reps} (+${s.pct}%)` });
 }
 function pariPlan(a, start) {
   const r = rulesFor(today());
   return { start, price: r?.pari_price ?? null, prizes: [r?.pari_p10, r?.pari_p25, r?.pari_p50],
     days: pariDays(a, start).map((date, i) => ({ n: i + 1, date, items: pariOptions(a, date).map((o) => {
       const base = pariBase(a, o);
-      return { id: o.id, name: o.name, unit: o.unit, target: o.target_reps, record: pariRecord(a, o.id), base, min: Math.ceil(base * 1.1) };
+      return { id: o.id, name: o.name, unit: o.unit, target: o.target_reps, record: pariRecord(a, o.id), base,
+        bets: PARI_TIERS.map((tier) => ({ tier, reps: pariReps(base, tier), prize: pariPrize(r, tier) })) };
     }) })) };
 }
 function buyPari(a, start, bets) {
@@ -617,9 +620,9 @@ function buyPari(a, start, bets) {
     const o = pariOptions(a, d).find((y) => y.id === bet.exercise_id);
     if (!o) fail(`Этого упражнения нет в плане на ${dayLabel(d)}`);
     const base = pariBase(a, o);
-    if (!(bet.reps >= Math.ceil(base * 1.1))) fail(`${o.name}: ставка минимум ${Math.ceil(base * 1.1)}`);
-    const pct = Math.floor((bet.reps * 100) / base - 100);
-    return { n: i + 1, exercise_id: o.id, name: o.name, unit: o.unit, reps: bet.reps, base, pct, prize: pariPrize(r, pct) };
+    if (!PARI_TIERS.includes(bet.tier)) fail(`${o.name}: ставка только +10%, +25% или +50%`);
+    return { n: i + 1, exercise_id: o.id, name: o.name, unit: o.unit, reps: pariReps(base, bet.tier), base, pct: bet.tier,
+      prize: pariPrize(r, bet.tier) };
   });
   const p = { id: seq++, athlete_id: a, start, price: r.pari_price, status: 'active', bets: rows, created_at: stamp() };
   db.pari.push(p);

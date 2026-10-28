@@ -395,6 +395,10 @@ a.chip-link { color: var(--accent); text-decoration: none; border: 1px solid var
 .pari-day, .pari-bought { border-top: 1px solid var(--line); padding-top: 10px; }
 .pari-bet { align-items: center; }
 .pari-bet .chip { white-space: nowrap; }
+.pari-tiers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.pari-tier { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px; height: auto; }
+.pari-tier b { font-size: 16px; }
+.pari-tier[aria-pressed="true"] { border-color: var(--bad); background: rgba(255, 138, 61, 0.14); }
 .pari-won .chip { color: var(--ok, var(--accent)); }
 .pari-lost .chip { color: var(--bad); }
 .pari-note { margin: 0; color: var(--bad); font-weight: 600; }

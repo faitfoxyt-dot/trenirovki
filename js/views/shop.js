@@ -2,7 +2,7 @@
 // Админ видит то же самое, отменяет покупки и отвечает на идеи.
 
 import { html, dayTitle, addDays } from '../util.js';
-import { POINTS, effectiveStatus, ALLIN, allinExample, PARI, PARI_STATE, pariPrize, amount, unitOf } from '../logic.js';
+import { POINTS, effectiveStatus, ALLIN, allinExample, PARI, PARI_STATE, pariTimes, amount, unitOf } from '../logic.js';
 import { phoneButton, confetti } from './goal.js';
 import { restTodayPrice } from '../logic.js';
 
@@ -112,13 +112,14 @@ export async function render(el, ctx, args, alive) {
     <section class="card beyond-card ${pariOpen ? '' : 'locked'}">
       <div class="row"><h2 class="h2">🔥 ${PARI}</h2><span class="chip">${pPrice !== null ? POINTS(pPrice) : 'не продаётся'}</span></div>
       ${r?.pari_streak ? streakLock(w.streak, r.pari_streak, isAdmin) : ''}
-      <p>Спор с генералом на 3 тренировки подряд. На каждую выбираешь одно упражнение и пишешь, сколько сделаешь за один подход.</p>
+      <p>Спор с генералом на 3 тренировки подряд.</p>
       <ul class="pari-list">
-        <li>Ставка — минимум на 10% больше твоего рекорда в этом упражнении. Если рекорд меньше цели — больше цели.</li>
-        <li>Сделал своё число в тот день — забираешь приз. Не сделал — приза нет, обычные очки остаются.</li>
+        <li>На каждую тренировку выбираешь одно упражнение и ставку: сделать на 10%, 25% или 50% больше своего рекорда за один подход.</li>
+        <li>Рекорд — твой лучший подход в этом упражнении. Если его ещё нет или он меньше цели, считаем от цели.</li>
+        <li>Сколько раз нужно сделать, увидишь сразу. Сделал — забираешь приз. Не сделал — приза нет, но обычные очки за день остаются.</li>
       </ul>
       <div class="pari-prizes">${pariPrizes.map(([pct, prize]) => html`<div><span class="label">ставка +${pct}%</span><b>${prize}</b></div>`)}</div>
-      <p class="label">Приз умножается на твою серию. Подход со ставкой — с видео, его проверяет генерал. Раз в неделю, начать — не дальше чем через неделю. В эти дни без «${ALLIN}» и без выходного.</p>
+      <p class="label">Подход со ставкой сними на видео — его проверит генерал. Купить можно раз в неделю, начать — в ближайшие 7 дней. В эти 3 дня нельзя «${ALLIN}» и выходной.</p>
       ${pariNow.map((p) => pariBlock(p, t))}
       ${isAdmin || !pariOpen || pPrice === null || pariNow.some((p) => p.start > t) ? '' : html`
         <label class="label" for="pari-start">С какой тренировки начать</label>
@@ -218,31 +219,31 @@ export async function render(el, ctx, args, alive) {
       const plan = await api.pariPlan(el.querySelector('#pari-start').value);
       if (!alive()) return;
       box.innerHTML = String(pariForm(plan, w.balance));
-      const prizes = plan.prizes;
+      const tiers = new Map(); // номер тренировки → выбранная ставка, %
       const sync = () => {
         box.querySelectorAll('[data-n]').forEach((row) => {
-          const day = plan.days[Number(row.dataset.n) - 1];
-          const it = day.items.find((x) => x.id === Number(row.querySelector('select').value));
-          const inp = row.querySelector('input');
-          inp.min = it.min;
-          inp.placeholder = `от ${it.min}`;
-          const reps = Number(inp.value);
-          const pct = reps ? Math.floor((reps * 100) / it.base - 100) : null;
-          const prize = pct === null ? 0 : pariPrize(prizes, pct);
-          row.querySelector('.pari-base').textContent = `${it.record ? `Рекорд ${amount(it.record, it.unit)}` : 'Рекорда ещё нет'}`
-            + `${it.target && it.target >= it.record ? `, цель ${amount(it.target, it.unit)}` : ''} → ставка от ${amount(it.min, it.unit)}`;
-          row.querySelector('.pari-win').textContent = !reps ? ''
-            : prize ? `+${pct}% → приз ${prize} × серия` : `Мало: нужно от ${amount(it.min, it.unit)}`;
+          const n = Number(row.dataset.n);
+          const it = plan.days[n - 1].items.find((x) => x.id === Number(row.querySelector('select').value));
+          row.querySelector('.pari-base').textContent = !it.record ? `Рекорда пока нет — считаем от цели: ${pariTimes(it.base, it.unit)}`
+            : it.base > it.record ? `Рекорд ${pariTimes(it.record, it.unit)}, но цель больше — считаем от цели: ${pariTimes(it.base, it.unit)}`
+              : `Твой рекорд: ${pariTimes(it.record, it.unit)}`;
+          row.querySelector('.pari-tiers').innerHTML = String(pariTiers(it, tiers.get(n)));
         });
       };
-      box.addEventListener('input', sync);
+      box.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-tier]');
+        if (!b) return;
+        tiers.set(Number(b.closest('[data-n]').dataset.n), Number(b.dataset.tier));
+        sync();
+      });
       box.addEventListener('change', sync);
       sync();
       box.querySelector('#buy-pari').addEventListener('click', async () => {
         const err = box.querySelector('#pari-error');
         err.textContent = '';
         const bets = [...box.querySelectorAll('[data-n]')].map((row) => ({ n: Number(row.dataset.n),
-          exercise_id: Number(row.querySelector('select').value), reps: Number(row.querySelector('input').value) || null }));
+          exercise_id: Number(row.querySelector('select').value), tier: tiers.get(Number(row.dataset.n)) ?? null }));
+        if (bets.some((x) => !x.tier)) { err.textContent = 'Выбери ставку на каждую из трёх тренировок'; return; }
         if (!confirm(`${PARI} с ${dayTitle(plan.start)} за ${POINTS(plan.price)}? Ставки потом не поменять.`)) return;
         try {
           await api.buyPari(plan.start, bets);
@@ -324,16 +325,16 @@ function todayHint(training, pari, price, balance) {
 // Купленное пари: 3 тренировки, ставки и что с ними.
 function pariBlock(p, t) {
   return html`<div class="pari-bought stack-8">
-    <p class="strong">Пари с ${dayTitle(p.start)} · ${p.price}</p>
+    <p class="strong">Твоё пари с ${dayTitle(p.start)}</p>
     ${p.bets.map((b, i) => html`<div class="row pari-bet pari-${b.state}">
-      <span><span class="label">${p.days[i] ? dayTitle(p.days[i]) : `Тренировка ${i + 1}`}</span><br>${b.name} — ${amount(b.reps, unitOf(b))}</span>
-      <span class="chip">${PARI_STATE[b.state].icon} ${b.state === 'won' ? `+${b.points}` : b.prize}</span>
+      <span><span class="label">${p.days[i] ? dayTitle(p.days[i]) : `Тренировка ${i + 1}`}</span><br>${b.name} — ${pariTimes(b.reps, unitOf(b))}</span>
+      <span class="chip">${PARI_STATE[b.state].icon} ${b.state === 'won' ? `+${b.prize}` : b.prize}</span>
     </div>`)}
     ${p.start > t ? html`<button type="button" class="ghost" data-cancel-pari="${p.id}">Отменить до начала</button>` : ''}
   </div>`;
 }
 
-// Форма ставок: на каждую из 3 тренировок — упражнение из плана и число за один подход.
+// Форма ставок: на каждую из 3 тренировок — упражнение из плана и одна из трёх ставок к рекорду.
 function pariForm(plan, balance) {
   if (plan.days.length < 3) return html`<p class="error">Впереди меньше трёх тренировок.</p>`;
   return html`
@@ -341,12 +342,18 @@ function pariForm(plan, balance) {
       <p class="strong">Тренировка ${d.n} · ${dayTitle(d.date)}</p>
       <select class="input" aria-label="Упражнение">${d.items.map((it) => html`<option value="${it.id}">${it.name}</option>`)}</select>
       <p class="label pari-base"></p>
-      <input class="input" type="number" inputmode="numeric" min="1" step="1" aria-label="Сколько за один подход">
-      <p class="label pari-win"></p>
+      <div class="pari-tiers" role="radiogroup" aria-label="Ставка"></div>
     </div>`)}
     <p class="error" id="pari-error" role="alert"></p>
     <button type="button" class="btn" id="buy-pari" ${balance >= plan.price ? '' : html`disabled`}>Поспорить за ${plan.price}</button>
     ${balance < plan.price ? html`<p class="label">Не хватает ${POINTS(plan.price - balance)}.</p>` : ''}`;
+}
+
+// Три ставки для упражнения: сколько раз сделать (вверх от базы) и приз.
+function pariTiers(it, tier) {
+  return html`${it.bets.map((b) => html`<button type="button" class="pill pari-tier" role="radio" data-tier="${b.tier}"
+    aria-pressed="${b.tier === tier ? 'true' : 'false'}" aria-checked="${b.tier === tier ? 'true' : 'false'}">
+    <span>+${b.tier}%</span><b>${pariTimes(b.reps, it.unit)}</b><span class="label">приз ${b.prize}</span></button>`)}`;
 }
 
 // Замок по серии: открыто, пока серия держится; пропуск дня — снова закрыто.

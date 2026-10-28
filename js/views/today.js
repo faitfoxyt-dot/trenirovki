@@ -3,7 +3,7 @@
 
 import { html, raw, dayTitle, addDays, shortDate, debounce } from '../util.js';
 import { MUSCLES, DAY_STATUS, caption, goalText, reviewNote, dayMode, isCalibration, unitOf, unitText,
-  ALLIN, ALLIN_STATE, PARI, PARI_STATE, signed, swapItems, pickLocked, videoCaption, plural, amount } from '../logic.js';
+  ALLIN, ALLIN_STATE, PARI, PARI_STATE, pariTimes, signed, swapItems, pickLocked, videoCaption, plural, amount } from '../logic.js';
 import { openGuide } from './guide.js';
 import { guideFor } from '../guide-data.js';
 import { poseSVG, svg, fitBox, underlay } from '../figure.js';
@@ -252,18 +252,18 @@ function allinCard(a, isToday) {
   </section>`;
 }
 
-// «За гранью предела»: ставка на сегодня — упражнение и число за один подход.
+// «За гранью предела»: ставка на сегодня — упражнение и сколько раз за один подход.
 function pariCard(p, isToday) {
-  const what = html`<b>${p.name}</b> — ${amount(p.reps, unitOf(p))} за один подход`;
   const state = PARI_STATE[p.state];
-  const prize = p.test ? `приз ${p.prize} ×${p.mult} (тестовый период — без очков)` : `приз ${p.prize} ×${p.mult} = ${p.points}`;
+  const times = (n) => pariTimes(n, unitOf(p));
+  const prize = p.test ? `приз ${p.prize} (в тестовый период очков нет)` : `приз ${p.prize}`;
   return html`<section class="card beyond-card">
     <div class="row"><h2 class="h2">🔥 ${PARI}</h2><span class="chip">${state.icon} ${state.text}</span></div>
-    <p>${isToday ? 'Сегодня спор с генералом: ' : 'Спор с генералом: '}${what}.</p>
-    ${p.state === 'won' ? html`<p class="ok strong">Сделано ${amount(p.best, unitOf(p))}! ${p.test ? prize : `+${p.points} очков`}</p>`
-      : p.state === 'lost' ? html`<p class="warn-strong">Не вышло${p.best ? `: лучший подход ${amount(p.best, unitOf(p))}` : ''}. Обычные очки остаются.</p>`
-      : p.state === 'check' ? html`<p class="strong">Подход на ставку у генерала на проверке. Выиграешь — ${prize}.</p>`
-      : html`<p class="strong">Сделаешь в любом подходе — ${prize}. Подход — с видео.</p>`}
+    <p>${isToday ? 'Сегодня спор с генералом' : 'Спор с генералом'}: <b>${p.name}</b> — ${times(p.reps)} за один подход.</p>
+    ${p.state === 'won' ? html`<p class="ok strong">Сделано: ${times(p.best)}! ${p.test ? prize : `+${p.prize} очков`}</p>`
+      : p.state === 'lost' ? html`<p class="warn-strong">Не вышло${p.best ? ` (лучший подход — ${times(p.best)})` : ''}. Обычные очки за день остаются.</p>`
+      : p.state === 'check' ? html`<p class="strong">Генерал смотрит твой подход. Если всё честно — ${prize}.</p>`
+      : html`<p class="strong">Сделаешь хотя бы в одном подходе — ${prize}. Сними этот подход на видео.</p>`}
   </section>`;
 }
 

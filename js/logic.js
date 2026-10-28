@@ -193,9 +193,10 @@ export const ALLIN_STATE = {
 };
 
 // Модификаторы открываются серией (rules.allin_streak, rules.pari_streak) и работают, пока она держится.
-// «За гранью предела» — пари на 3 тренировки: ставка выше базы на +10/+25/+50% → приз pari_p10/p25/p50.
+// «За гранью предела» — пари на 3 тренировки: ставка +10/+25/+50% к базе → приз pari_p10/p25/p50 (без множителя серии).
 export const PARI = 'За гранью предела';
-export const pariPrize = (prizes, pct) => (pct >= 50 ? prizes[2] : pct >= 25 ? prizes[1] : pct >= 10 ? prizes[0] : 0) ?? 0;
+// «38 раз», «22 раза» или «1 мин 30 с».
+export const pariTimes = (n, unit) => (isSec(unit) ? amount(n, unit) : `${n} ${plural(n, 'раз', 'раза', 'раз')}`);
 export const PARI_STATE = {
   wait: { icon: '⏳', text: 'впереди' },
   check: { icon: '👀', text: 'у генерала' },
