@@ -244,6 +244,24 @@ export const api = {
     return error ? null : data;
   },
 
+  // «Русская рулетка»: до миграции 0027 функций нет — тогда колеса просто нет.
+  async rouletteDay(date, athleteId) {
+    const { data, error } = await sb.rpc('roulette_day', { p_date: date, p_athlete: athleteId ?? null });
+    return error ? null : data;
+  },
+  async spinRoulette() {
+    return check(await sb.rpc('spin_roulette'));
+  },
+  async skipRoulette() {
+    return check(await sb.rpc('skip_roulette'));
+  },
+  async pullTrigger(pull) {
+    return check(await sb.rpc('pull_trigger', { p_pull: pull }));
+  },
+  async saveRoulette(cfg) {
+    return check(await sb.rpc('save_roulette', { p: cfg }));
+  },
+
   async cancelPurchase(id) {
     return check(await sb.rpc('cancel_purchase', { p_id: id }));
   },

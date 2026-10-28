@@ -7,6 +7,7 @@ import { MUSCLES, DAY_STATUS, caption, goalText, reviewNote, dayMode, isCalibrat
 import { openGuide } from './guide.js';
 import { guideFor } from '../guide-data.js';
 import { poseSVG, svg, fitBox, underlay } from '../figure.js';
+import { rouletteCard, rouletteChip, rouletteLocked, wireRoulette } from './roulette.js';
 
 const BANNER_KEY = 'video-banner-1'; // «Понятно» на плашке про видео — помним в браузере
 
@@ -26,7 +27,7 @@ export async function render(el, ctx, args, alive) {
     return;
   }
 
-  const [day, logs, mornings, sick, wallet, catalog, allin, weighed, swaps, video, waiting, event, pari] = await Promise.all([
+  const [day, logs, mornings, sick, wallet, catalog, allin, weighed, swaps, video, waiting, event, pari, roulette] = await Promise.all([
     api.openDay(date, isAdmin ? athleteId : undefined),
     api.logs(athleteId, date, date),
     api.mornings(athleteId, date, date),
@@ -40,11 +41,14 @@ export async function render(el, ctx, args, alive) {
     api.waitingVideos ? api.waitingVideos(athleteId, date) : [],
     api.eventDay ? api.eventDay(date, isAdmin ? athleteId : undefined) : null,
     api.pariDay ? api.pariDay(date, isAdmin ? athleteId : undefined) : null,
+    api.rouletteDay ? api.rouletteDay(date, isAdmin ? athleteId : undefined) : null,
   ]);
   if (!alive()) return;
 
   const status = day ? day.status : null;
-  const mode = isAdmin ? 'view' : dayMode({ date, clock, startDate: settings.start_date, status });
+  // Колесо дня: пока друг не крутанул его (и не решил с револьвером), подходы закрыты.
+  const locked = !isAdmin && status === 'training' && rouletteLocked(roulette, settings);
+  const mode = isAdmin ? 'view' : locked ? 'locked' : dayMode({ date, clock, startDate: settings.start_date, status });
   const state = {
     morning: mornings[0] ?? { muscles: null, energy: null, note: null },
     logs: new Map(logs.map((l) => [`${l.exercise_id}-${l.set_no}`, l])),
@@ -70,13 +74,16 @@ export async function render(el, ctx, args, alive) {
       <div class="chips">
         ${isAdmin && isToday ? html`<span class="chip">${dayTitle(date)}</span>` : ''}
         ${isCalibration(ctx.rules?.current) ? html`<span class="chip">Тестовый период · очки не начисляются</span>` : ''}
-        ${wallet && !beforeStart ? streakChip(wallet, ctx.rules?.current) : ''}
+        ${wallet && !beforeStart ? streakChip(wallet, ctx.rules?.current, roulette?.spin && roulette.spin.gun !== 'offer' && roulette.spin.key !== 'skip') : ''}
         ${beforeStart ? html`<span class="chip chip-warn">Старт ${shortDate(settings.start_date)}</span>` : ''}
         ${allin && status === 'training' ? html`<span class="chip chip-allin">🎲 ALL IN</span>` : ''}
         ${pari && status === 'training' ? html`<span class="chip chip-pari">🔥 ${PARI}</span>` : ''}
         ${event?.score > 0 ? html`<span class="chip chip-event">⭐ Событие · очки ×${(1 + event.score / 10).toFixed(1)}</span>` : ''}
+        ${status === 'training' ? rouletteChip(roulette) : ''}
       </div>
     </header>
+
+    ${status === 'training' && !beforeStart ? rouletteCard(roulette, settings, { isToday, isAdmin }) : ''}
 
     ${isToday ? guideButton() : ''}
 
@@ -97,9 +104,10 @@ export async function render(el, ctx, args, alive) {
 
     ${status === 'training' && day.plan && !beforeStart && isToday ? html`<section class="card swap-card" id="swap" hidden></section>` : ''}
 
+    ${locked ? html`<p class="notice rl-lock-note">🔒 Сначала колесо дня: крути или жми «Не крутить сегодня» — потом откроются подходы.</p>` : ''}
     ${status === 'training' && day.plan && !beforeStart
-      ? day.plan.map((ex, i) => (ex.pick ? pickCard(ex, i, day.plan.length, date, state, editable, mode, catalog, allin, logs, isAdmin, bases[i])
-        : exerciseCard(ex, date, state, editable, mode, catalog, allin, '', bases[i])))
+      ? lockWrap(locked, day.plan.map((ex, i) => (ex.pick ? pickCard(ex, i, day.plan.length, date, state, editable, mode, catalog, allin, logs, isAdmin, bases[i])
+        : exerciseCard(ex, date, state, editable, mode, catalog, allin, '', bases[i]))))
       : html`<section class="card">
           <h2 class="h2">${status ? DAY_STATUS[status] : 'План не задан'}</h2>
           <p class="label">${restText(status, beforeStart)}</p>
@@ -111,6 +119,8 @@ export async function render(el, ctx, args, alive) {
     ${status === 'training' && !isAdmin && isToday ? html`<p class="label center">Каждый подход сохраняется сразу.<br>
       День закроется в 00:00, видео можно отметить до 03:00.</p>` : ''}
   `);
+
+  wireRoulette(el, ctx, roulette);
 
   const swapEl = el.querySelector('#swap');
   if (swapEl) renderSwap(swapEl, ctx, state, day.plan, logs, catalog, !isAdmin && mode === 'open');
@@ -199,10 +209,14 @@ function guideButton() {
 }
 
 // Серия и множитель, на который умножаются очки за сегодняшние подходы.
-function streakChip(w, r) {
+// Колесо уже крутили — итоговый множитель дня в чипе рулетки, здесь только серия.
+function streakChip(w, r, spun) {
   const on = !isCalibration(r) && r?.streak_from && r?.streak_step;
-  return html`<span class="chip ${on && w.mult > 1 ? 'chip-on' : ''}">${isCalibration(r) ? 'Тестовая серия' : 'Серия'} ${w.streak}${on ? ` · сегодня очки ×${w.mult}` : ''}</span>`;
+  return html`<span class="chip ${on && w.mult > 1 ? 'chip-on' : ''}">${isCalibration(r) ? 'Тестовая серия' : 'Серия'} ${w.streak}${on ? ` · ${spun ? '' : 'сегодня очки '}×${w.mult}` : ''}</span>`;
 }
+
+// Подходы под замком, пока не крутанул колесо дня: видно, но не нажать.
+const lockWrap = (on, cards) => (on ? html`<div class="rl-locked" aria-disabled="true">${cards}</div>` : cards);
 
 function restText(status, beforeStart) {
   if (beforeStart) return 'Старт ещё не наступил. Подходы можно будет отмечать со дня старта.';
