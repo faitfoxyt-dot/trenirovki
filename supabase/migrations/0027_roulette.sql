@@ -531,5 +531,11 @@ end $$;
 
 -- ───────────── Права ─────────────
 
+-- Внутренние функции колеса зовёт только сама база; сайту нужны roulette_day, spin_roulette, skip_roulette, pull_trigger, save_roulette.
+revoke execute on function public.roulette_keys(), public.roulette_cfg(), public.roulette_name(text, text),
+  public.roulette_add_text(numeric), public.roulette_num(jsonb, numeric, numeric, boolean), public.roulette_pick(jsonb, text[]),
+  public.roulette_state(uuid, date), public.roulette_apply(uuid, date) from public, anon, authenticated;
+revoke execute on function public.roulette_day(date, uuid), public.spin_roulette(), public.skip_roulette(),
+  public.pull_trigger(boolean), public.save_roulette(jsonb) from public, anon;
 grant execute on function public.roulette_day(date, uuid), public.spin_roulette(), public.skip_roulette(),
   public.pull_trigger(boolean), public.save_roulette(jsonb) to authenticated;
