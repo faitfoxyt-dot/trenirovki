@@ -24,13 +24,14 @@ export const OUTCOMES = [
 export const outcome = (key) => OUTCOMES.find((o) => o.key === key) ?? OUTCOMES.find((o) => o.key === 'blank');
 
 // Стартовые числа: в среднем около +0.1 к множителю (×1.1). add — прибавка, chance — шанс в %.
+// «Холостой» (0) выключен: не хочешь рисковать — можно не крутить колесо. Вернуть его можно в «Правилах».
 // gun — револьвер: курок пустой (5 из 6) даёт win, патрон — lose. floor — множитель дня не ниже (null — можно в минус).
-// lock — подходы закрыты, пока друг не крутанул колесо (и не решил с револьвером).
+// lock — подходы закрыты, пока друг не крутанул колесо (и не решил с револьвером) или не отказался от него.
 export const DEFAULT_ROULETTE = {
   on: false, lock: true, floor: 0.1,
   items: {
     jackpot: { add: 1, chance: 10 }, volley: { add: 0.5, chance: 8 }, double: { add: 0.3, chance: 12 },
-    hit: { add: 0.1, chance: 16 }, blank: { add: 0, chance: 12 }, miss: { add: -0.1, chance: 12 },
+    hit: { add: 0.1, chance: 22 }, blank: { add: 0, chance: 0 }, miss: { add: -0.1, chance: 18 },
     misfire: { add: -0.3, chance: 10 }, wound: { add: -0.5, chance: 6 }, bullet: { add: -0.7, chance: 4 },
     revolver: { chance: 4 }, respin: { chance: 4 }, star: { chance: 2 },
   },

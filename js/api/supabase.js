@@ -252,6 +252,9 @@ export const api = {
   async spinRoulette() {
     return check(await sb.rpc('spin_roulette'));
   },
+  async skipRoulette() {
+    return check(await sb.rpc('skip_roulette'));
+  },
   async pullTrigger(pull) {
     return check(await sb.rpc('pull_trigger', { p_pull: pull }));
   },

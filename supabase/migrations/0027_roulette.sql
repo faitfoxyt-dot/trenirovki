@@ -4,10 +4,12 @@
 -- Минус не опускает множитель дня ниже settings.roulette.floor (×0.1). Событие дня и пари колесо не трогает.
 -- Особые сектора: 🔫 Револьвер — друг жмёт на курок (пусто: gun.win, патрон: gun.lose) или убирает его (0), pull_trigger;
 -- 🔄 Ещё раз — колесо крутится снова; ⭐ Звезда — событие дня на сегодня, если его ещё нет.
+-- Не хочет рисковать (например, в день «Всё или ничего») — жмёт «Не крутить сегодня» (skip_roulette):
+-- множитель как обычно, крутить в этот день уже нельзя.
 -- Когда день закончился и всё проверено, settle() пишет прибавку одной записью ledger 'roulette' (roulette_apply)
 -- и поправляет её, если генерал передумал. В тестовый период очков нет.
 -- Шансы и числа — settings.roulette, их меняет админ в «Правилах» (save_roulette).
--- Подходы до прокрутки закрыты только на сайте (settings.roulette.lock), log_set не меняется.
+-- Подходы до прокрутки или отказа закрыты только на сайте (settings.roulette.lock), log_set не меняется.
 -- Повторный запуск безопасен.
 
 alter type public.ledger_kind add value if not exists 'roulette';
@@ -16,7 +18,7 @@ create table if not exists public.roulette_spins (
   athlete_id uuid not null references public.profiles (id),
   date       date not null,
   chain      text[] not null,     -- что выпадало по порядку: {double} или {respin,double}
-  key        text not null,       -- итог — последний сектор
+  key        text not null,       -- итог — последний сектор; skip — друг отказался крутить
   plus       numeric,             -- прибавка к множителю; null — револьвер ещё не решён
   gun        text check (gun in ('offer', 'pass', 'click', 'bang')), -- револьвер: ждёт, убран, пусто, выстрел
   spun_at    timestamptz not null default now(),
@@ -32,12 +34,13 @@ do $$ begin
 exception when duplicate_object then null; end $$;
 
 -- Настройки колеса, как DEFAULT_ROULETTE в js/roulette-data.js. В среднем около +0.1 к множителю.
+-- «Холостой» (0) выключен: вместо него можно не крутить колесо. Вернуть его можно в «Правилах».
 alter table public.settings add column if not exists roulette jsonb;
 update public.settings set roulette = '{
   "on": true, "lock": true, "floor": 0.1,
   "items": {
     "jackpot": {"add": 1, "chance": 10}, "volley": {"add": 0.5, "chance": 8}, "double": {"add": 0.3, "chance": 12},
-    "hit": {"add": 0.1, "chance": 16}, "blank": {"add": 0, "chance": 12}, "miss": {"add": -0.1, "chance": 12},
+    "hit": {"add": 0.1, "chance": 22}, "blank": {"add": 0, "chance": 0}, "miss": {"add": -0.1, "chance": 18},
     "misfire": {"add": -0.3, "chance": 10}, "wound": {"add": -0.5, "chance": 6}, "bullet": {"add": -0.7, "chance": 4},
     "revolver": {"chance": 4}, "respin": {"chance": 4}, "star": {"chance": 2}
   },
@@ -58,14 +61,14 @@ language sql stable security definer set search_path = public as $$
   select coalesce((select roulette from settings where id = 1), '{}'::jsonb)
 $$;
 
--- «💰 Джекпот», «🔫 Револьвер: щёлк, пусто».
+-- «💰 Джекпот», «🔫 Револьвер: щёлк, пусто», «🚫 Без колеса».
 create or replace function public.roulette_name(p_key text, p_gun text default null) returns text
 language sql immutable as $$
   select case p_key
       when 'jackpot' then '💰 Джекпот' when 'miss' then '🙈 Мимо' when 'double' then '💥 Дуплет'
       when 'respin' then '🔄 Ещё раз' when 'misfire' then '😬 Осечка' when 'hit' then '🎯 Попадание'
       when 'wound' then '🩹 Ранение' when 'volley' then '🎆 Залп' when 'revolver' then '🔫 Револьвер'
-      when 'star' then '⭐ Звезда' when 'bullet' then '💀 Пуля' else '💨 Холостой' end
+      when 'star' then '⭐ Звезда' when 'bullet' then '💀 Пуля' when 'skip' then '🚫 Без колеса' else '💨 Холостой' end
     || case p_gun when 'click' then ': щёлк, пусто' when 'bang' then ': выстрел' when 'pass' then ' убран'
                   when 'offer' then ' не решён' else '' end
 $$;
@@ -117,7 +120,7 @@ end $$;
 
 -- Колесо за день, как rouletteState в js/api/demo.js. null — в этот день колеса нет.
 -- m — множитель до колеса (серия или «Всё или ничего»), mult — после, bonus — сколько колесо даёт сверху.
--- need — сегодня друг ещё должен крутить колесо или решить с револьвером.
+-- need — сегодня друг ещё должен крутить колесо (или отказаться от него) или решить с револьвером.
 create or replace function public.roulette_state(p_athlete uuid, p_date date) returns json
 language plpgsql stable security definer set search_path = public as $$
 declare
@@ -233,8 +236,9 @@ begin
   if uid is null then raise exception 'Нужно войти'; end if;
   if (select role from profiles where id = uid) is distinct from 'athlete' then raise exception 'Колесо крутит атлет'; end if;
   perform lock_athlete(uid);
-  if exists (select 1 from roulette_spins where athlete_id = uid and date = today) then
-    raise exception 'Колесо сегодня уже крутили';
+  select key into k from roulette_spins where athlete_id = uid and date = today;
+  if found then
+    raise exception '%', case when k = 'skip' then 'Сегодня колесо уже пропущено' else 'Колесо сегодня уже крутили' end;
   end if;
   s := roulette_state(uid, today);
   if s is null or not (s ->> 'need')::boolean then raise exception 'Сегодня колеса нет'; end if;
@@ -254,6 +258,28 @@ begin
     on conflict (athlete_id, date) do update
     set game = excluded.game, title = excluded.title, active = true, score = null, done = false, played_at = null;
   end if;
+  return roulette_day(today);
+end $$;
+
+-- «Не крутить сегодня»: множитель как обычно. Отказ — до конца дня, крутить потом уже нельзя.
+create or replace function public.skip_roulette() returns json
+language plpgsql security definer set search_path = public as $$
+declare
+  uid   uuid := auth.uid();
+  today date := app_today();
+  s     json;
+  k     text;
+begin
+  if uid is null then raise exception 'Нужно войти'; end if;
+  if (select role from profiles where id = uid) is distinct from 'athlete' then raise exception 'Колесо крутит атлет'; end if;
+  perform lock_athlete(uid);
+  select key into k from roulette_spins where athlete_id = uid and date = today;
+  if found then
+    raise exception '%', case when k = 'skip' then 'Сегодня колесо уже пропущено' else 'Колесо сегодня уже крутили' end;
+  end if;
+  s := roulette_state(uid, today);
+  if s is null or not (s ->> 'need')::boolean then raise exception 'Сегодня колеса нет'; end if;
+  insert into roulette_spins (athlete_id, date, chain, key, plus) values (uid, today, '{}', 'skip', 0);
   return roulette_day(today);
 end $$;
 
@@ -427,7 +453,7 @@ begin
   end if;
 end $$;
 
--- Итог дня для бота: как в 0013, плюс строка «Колесо» в тренировочный день.
+-- Итог дня для бота: как в 0013, плюс строка «Колесо» в тренировочный день (что выпало или «не крутил»).
 create or replace function public.bot_summary_text(p_athlete uuid, p_date date) returns text
 language plpgsql stable security definer set search_path = public as $$
 declare
@@ -481,10 +507,10 @@ begin
     select * into sp from roulette_spins where athlete_id = p_athlete and date = p_date;
     if found then
       lines := lines || ('Колесо: ' || case when cardinality(sp.chain) > 1 then '🔄 → ' else '' end
-        || roulette_name(sp.key, sp.gun)
+        || case when sp.key = 'skip' then '🚫 не крутил' else roulette_name(sp.key, sp.gun) end
         || case when sp.key = 'star' then ' — событие дня'
-                else ' ' || roulette_add_text(sp.plus) || ' · очки за подходы ×'
-                     || coalesce(roulette_state(p_athlete, p_date) ->> 'mult', '1') end);
+                else case when sp.key = 'skip' then '' else ' ' || roulette_add_text(sp.plus) end
+                     || ' · очки за подходы ×' || coalesce(roulette_state(p_athlete, p_date) ->> 'mult', '1') end);
     end if;
   end if;
 
@@ -505,5 +531,5 @@ end $$;
 
 -- ───────────── Права ─────────────
 
-grant execute on function public.roulette_day(date, uuid), public.spin_roulette(), public.pull_trigger(boolean),
-  public.save_roulette(jsonb) to authenticated;
+grant execute on function public.roulette_day(date, uuid), public.spin_roulette(), public.skip_roulette(),
+  public.pull_trigger(boolean), public.save_roulette(jsonb) to authenticated;

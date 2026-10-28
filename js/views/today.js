@@ -74,7 +74,7 @@ export async function render(el, ctx, args, alive) {
       <div class="chips">
         ${isAdmin && isToday ? html`<span class="chip">${dayTitle(date)}</span>` : ''}
         ${isCalibration(ctx.rules?.current) ? html`<span class="chip">Тестовый период · очки не начисляются</span>` : ''}
-        ${wallet && !beforeStart ? streakChip(wallet, ctx.rules?.current, roulette?.spin && roulette.spin.gun !== 'offer') : ''}
+        ${wallet && !beforeStart ? streakChip(wallet, ctx.rules?.current, roulette?.spin && roulette.spin.gun !== 'offer' && roulette.spin.key !== 'skip') : ''}
         ${beforeStart ? html`<span class="chip chip-warn">Старт ${shortDate(settings.start_date)}</span>` : ''}
         ${allin && status === 'training' ? html`<span class="chip chip-allin">🎲 ALL IN</span>` : ''}
         ${pari && status === 'training' ? html`<span class="chip chip-pari">🔥 ${PARI}</span>` : ''}
@@ -104,7 +104,7 @@ export async function render(el, ctx, args, alive) {
 
     ${status === 'training' && day.plan && !beforeStart && isToday ? html`<section class="card swap-card" id="swap" hidden></section>` : ''}
 
-    ${locked ? html`<p class="notice rl-lock-note">🔒 Сначала колесо дня — потом откроются подходы.</p>` : ''}
+    ${locked ? html`<p class="notice rl-lock-note">🔒 Сначала колесо дня: крути или жми «Не крутить сегодня» — потом откроются подходы.</p>` : ''}
     ${status === 'training' && day.plan && !beforeStart
       ? lockWrap(locked, day.plan.map((ex, i) => (ex.pick ? pickCard(ex, i, day.plan.length, date, state, editable, mode, catalog, allin, logs, isAdmin, bases[i])
         : exerciseCard(ex, date, state, editable, mode, catalog, allin, '', bases[i]))))

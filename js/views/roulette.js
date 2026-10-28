@@ -1,6 +1,7 @@
 // «Русская рулетка» на «Сегодня»: каждое утро тренировочного дня друг сам крутит колесо.
 // Выпавшее число прибавляется к множителю очков за подходы (серия или «Всё или ничего»), не ниже пола.
 // Особые сектора: револьвер (жать на курок или убрать), «ещё раз» (колесо крутится снова) и звезда (событие дня).
+// Не хочет рисковать — «Не крутить сегодня»: множитель как обычно, крутить в этот день уже нельзя.
 // Что выпало, решает база; колесо только красиво доезжает до ответа.
 
 import { html, raw } from '../util.js';
@@ -56,7 +57,9 @@ function sectorLabel(s, cfg) {
   </g>`;
 }
 
-// Диск с секторами (крутится) и рамка поверх (обод с лампочками, блик, стрелка — стоят на месте).
+// Колесо из слоёв. Диск с секторами крутится целиком внутри .rl-rot — телефон вращает готовую картинку
+// и не перерисовывает SVG. Поверх стоят обод, лампочки (мигают прозрачностью), стрелка (качается)
+// и, после остановки, слой с выпавшим сектором (.rl-hitbox). Так анимации идут на видеочипе.
 function wheelHtml(cfg, segs, { mini = false } = {}) {
   const id = ++uid;
   const sectors = segs.map((s) => `<path class="rl-sec" data-key="${s.o.key}" d="${sectorPath(s, R_SEC)}" fill="${s.o.color}"/>`).join('');
@@ -68,119 +71,185 @@ function wheelHtml(cfg, segs, { mini = false } = {}) {
     const [px, py] = pt(R_SEC - 7, s.from);
     return `<line x1="${f2(x1)}" y1="${f2(y1)}" x2="${f2(x2)}" y2="${f2(y2)}"/>${mini ? '' : `<circle cx="${f2(px)}" cy="${f2(py)}" r="3.2"/>`}`;
   }).join('') : '';
-  const bulbs = Array.from({ length: BULBS }, (_, i) => {
+  const bulb = (i) => {
     const [x, y] = pt(179, (360 / BULBS) * i + 360 / BULBS / 2);
-    return `<circle class="rl-bulb rl-b${i % 2}" cx="${f2(x)}" cy="${f2(y)}" r="${mini ? 5 : 3.6}"/>`;
-  }).join('');
+    return `<circle cx="${f2(x)}" cy="${f2(y)}" r="${mini ? 5 : 3.6}"/>`;
+  };
+  const bulbs = (k) => Array.from({ length: BULBS }, (_, i) => (k === null || i % 2 === k ? bulb(i) : '')).join('');
+  // Горящие лампочки — два слоя через одну: мигают по очереди.
+  const lit = [0, 1].map((k) => `<div class="rl-lit rl-lit-${k}"><svg viewBox="0 0 400 400" aria-hidden="true">
+      <defs><filter id="rl-glow-${id}-${k}" x="-50%" y="-50%" width="200%" height="200%">
+        <feGaussianBlur stdDeviation="2.4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter></defs>
+      <g filter="url(#rl-glow-${id}-${k})">${bulbs(k)}</g>
+    </svg></div>`).join('');
   return raw(`<div class="rl-wheel ${mini ? 'rl-wheel-mini' : ''}">
-    <svg class="rl-disc" viewBox="0 0 400 400" aria-hidden="true">
-      <defs>
-        <radialGradient id="rl-shade-${id}" cx="50%" cy="50%" r="50%">
-          <stop offset="0" stop-color="#000" stop-opacity=".45"/><stop offset=".42" stop-color="#000" stop-opacity=".08"/>
-          <stop offset=".8" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".28"/>
-        </radialGradient>
-      </defs>
-      <circle cx="${C}" cy="${C}" r="${R_SEC}" fill="#0B0C10"/>
-      <g class="rl-secs">${sectors}</g>
-      <circle cx="${C}" cy="${C}" r="${R_SEC}" fill="url(#rl-shade-${id})" pointer-events="none"/>
-      <g class="rl-spokes">${spokes}</g>
-      ${labels}
-      <circle cx="${C}" cy="${C}" r="56" class="rl-inner"/>
-    </svg>
+    <div class="rl-clip"><div class="rl-rot">
+      <svg class="rl-disc" viewBox="0 0 400 400" aria-hidden="true">
+        <defs>
+          <radialGradient id="rl-shade-${id}" cx="50%" cy="50%" r="50%">
+            <stop offset="0" stop-color="#000" stop-opacity=".45"/><stop offset=".42" stop-color="#000" stop-opacity=".08"/>
+            <stop offset=".8" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".28"/>
+          </radialGradient>
+        </defs>
+        <circle cx="${C}" cy="${C}" r="${R_SEC}" fill="#0B0C10"/>
+        <g class="rl-secs">${sectors}</g>
+        <circle cx="${C}" cy="${C}" r="${R_SEC}" fill="url(#rl-shade-${id})" pointer-events="none"/>
+        <g class="rl-spokes">${spokes}</g>
+        ${labels}
+        <circle cx="${C}" cy="${C}" r="56" class="rl-inner"/>
+      </svg>
+      ${mini ? '' : '<div class="rl-hitbox"></div>'}
+    </div></div>
     <svg class="rl-frame" viewBox="0 0 400 400" aria-hidden="true">
       <defs>
         <linearGradient id="rl-rim-${id}" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stop-color="#3A3F4A"/><stop offset=".5" stop-color="#1C1F26"/><stop offset="1" stop-color="#2E333D"/>
         </linearGradient>
-        <linearGradient id="rl-pin-${id}" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0" stop-color="#FFE9A3"/><stop offset=".55" stop-color="#FFD54A"/><stop offset="1" stop-color="#C79A12"/>
-        </linearGradient>
         <radialGradient id="rl-gloss-${id}" cx="35%" cy="22%" r="60%">
           <stop offset="0" stop-color="#fff" stop-opacity=".16"/><stop offset=".6" stop-color="#fff" stop-opacity="0"/>
         </radialGradient>
-        <filter id="rl-glow-${id}" x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur stdDeviation="2.4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-        </filter>
       </defs>
       <circle cx="${C}" cy="${C}" r="${R_SEC}" fill="url(#rl-gloss-${id})"/>
       <circle cx="${C}" cy="${C}" r="179" fill="none" stroke="url(#rl-rim-${id})" stroke-width="18"/>
       <circle cx="${C}" cy="${C}" r="188.5" fill="none" class="rl-rim-line"/>
       <circle cx="${C}" cy="${C}" r="170" fill="none" class="rl-rim-line"/>
-      <g filter="url(#rl-glow-${id})">${bulbs}</g>
-      <g class="rl-pin">
-        <path d="M${C} 52 L${C - 15} 18 A17 17 0 1 1 ${C + 15} 18 Z" fill="url(#rl-pin-${id})" stroke="#3B2C00" stroke-width="2.5" stroke-linejoin="round"/>
-        <circle cx="${C}" cy="12" r="5.5" fill="#3B2C00"/>
-      </g>
+      <g class="rl-bulbs-off">${bulbs(null)}</g>
     </svg>
+    ${lit}
+    <div class="rl-pinbox"><svg viewBox="180 -2 40 56" aria-hidden="true">
+      <defs><linearGradient id="rl-pin-${id}" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#FFE9A3"/><stop offset=".55" stop-color="#FFD54A"/><stop offset="1" stop-color="#C79A12"/>
+      </linearGradient></defs>
+      <path d="M${C} 52 L${C - 15} 18 A17 17 0 1 1 ${C + 15} 18 Z" fill="url(#rl-pin-${id})" stroke="#3B2C00" stroke-width="2.5" stroke-linejoin="round"/>
+      <circle cx="${C}" cy="12" r="5.5" fill="#3B2C00"/>
+    </svg></div>
     ${mini ? '' : '<button type="button" class="rl-hub" data-rl-hub>КРУТИ</button>'}
   </div>`);
 }
 
+// Выпавший сектор: колесо темнеет, сектор остаётся ярким, обводка мигает. Отдельный слой над диском.
+function hitHtml(s, cfg) {
+  if (!s) return '';
+  const d = sectorPath(s, R_SEC);
+  return `<div class="rl-hit-dim"><svg viewBox="0 0 400 400" aria-hidden="true">
+      <circle cx="${C}" cy="${C}" r="${R_SEC}" fill="#07080B" fill-opacity=".74"/>
+      <path d="${d}" fill="${s.o.color}"/>${sectorLabel(s, cfg)}
+      <circle cx="${C}" cy="${C}" r="56" class="rl-inner"/>
+    </svg></div>
+    <div class="rl-ring"><svg viewBox="0 0 400 400" aria-hidden="true">
+      <path d="${d}" fill="none" stroke="#FFF4C8" stroke-width="4" stroke-linejoin="round"/>
+    </svg></div>`;
+}
+
+// Кривая Безье для времени анимации — та же, что у браузера, чтобы щелчки стрелки совпадали с колесом.
+function bezier(x1, y1, x2, y2) {
+  const cx = 3 * x1; const bx = 3 * (x2 - x1) - cx; const ax = 1 - cx - bx;
+  const cy = 3 * y1; const by = 3 * (y2 - y1) - cy; const ay = 1 - cy - by;
+  const X = (t) => ((ax * t + bx) * t + cx) * t;
+  const Y = (t) => ((ay * t + by) * t + cy) * t;
+  const dX = (t) => (3 * ax * t + 2 * bx) * t + cx;
+  return (x) => {
+    let t = x;
+    for (let i = 0; i < 8; i += 1) {
+      const e = X(t) - x;
+      if (Math.abs(e) < 1e-6) break;
+      const d = dX(t);
+      if (Math.abs(d) < 1e-6) break;
+      t -= e / d;
+    }
+    return Y(Math.min(1, Math.max(0, t)));
+  };
+}
+const EASE_IN = 'cubic-bezier(0.333, 0, 0.667, 0.333)'; // ровно t²: равномерный разгон
+const EASE_OUT = [0.25, 1, 0.5, 1];                      // торможение, начальная скорость ×4 к средней
+const easeOut = bezier(...EASE_OUT);
+
 // Колесо крутится с постоянной скоростью, пока ждём базу, а потом плавно доезжает до нужного сектора.
+// Вращение — анимация браузера (видеочип, без перерисовки), а угол для щелчков считаем той же формулой.
 // onTick(скорость) — стрелка перескочила на соседний сектор.
 function spinner(box, segs, onTick) {
-  const disc = box.querySelector('.rl-disc');
+  const rot = box.querySelector('.rl-rot');
   const V = reduced() ? 500 : 1150; // градусов в секунду
-  let angle = Math.random() * 360;
-  let speed = 0;
+  const R = 0.45;                   // разгон до V, секунд
+  let angle = Math.random() * 360;  // угол, с которого началось текущее движение
+  let plan = null;                  // { kind: 'run' | 'stop', t0, … }
+  let anim = null;
   let raf = 0;
-  let last = 0;
-  let mode = 'idle';
-  let stop = null;
   const at = (a) => {
     const p = (((-a) % 360) + 360) % 360;
     const i = segs.findIndex((s) => p >= s.from && p < s.to);
     return i < 0 ? segs.length - 1 : i;
   };
-  let cur = at(angle);
-  const draw = () => {
-    disc.style.transform = `rotate(${f2(angle)}deg)`;
-    const i = at(angle);
-    if (i !== cur) { cur = i; onTick(speed); }
-  };
-  const frame = (now) => {
-    const dt = last ? Math.min(0.05, (now - last) / 1000) : 0;
-    last = now;
-    if (mode === 'run') {
-      speed = Math.min(V, speed + V * dt * 2.2);
-      angle += speed * dt;
-    } else if (mode === 'stop') {
-      const x = Math.min(1, (now - stop.t0) / stop.T);
-      angle = stop.from + stop.A * (1 - (1 - x) ** 4);
-      speed = ((4 * stop.A) / (stop.T / 1000)) * (1 - x) ** 3;
-      if (x >= 1) {
-        mode = 'idle';
-        speed = 0;
-        draw();
-        stop.done();
-        return;
-      }
+  const rotate = (a) => `rotate(${f2(a)}deg)`;
+  // Угол и скорость в момент now — та же кривая, что у анимации.
+  const state = (now) => {
+    if (!plan) return [angle, 0];
+    const t = Math.max(0, (now - plan.t0) / 1000);
+    if (plan.kind === 'run') {
+      return t < R ? [angle + (V * t * t) / (2 * R), (V * t) / R] : [angle + (V * R) / 2 + V * (t - R), V];
     }
-    draw();
-    raf = requestAnimationFrame(frame);
+    const x = Math.min(1, t / plan.T);
+    const dx = Math.min(1, x + 0.002);
+    return [angle + plan.A * easeOut(x), x >= 1 ? 0 : (plan.A * (easeOut(dx) - easeOut(x))) / ((dx - x) * plan.T)];
   };
-  draw();
+  let cur = at(angle);
+  const watch = (now) => {
+    const [a, speed] = state(now);
+    const i = at(a);
+    if (i !== cur) { cur = i; onTick(speed); }
+    if (plan) raf = requestAnimationFrame(watch);
+  };
+  const play = (keyframes, opts) => {
+    anim?.cancel();
+    anim = rot.animate?.(keyframes, { fill: 'forwards', ...opts }) ?? null;
+    if (!anim) rot.style.transform = keyframes[keyframes.length - 1].transform;
+  };
+  rot.style.transform = rotate(angle);
   return {
     start() {
-      mode = 'run';
-      last = 0;
+      const now = performance.now();
+      [angle] = state(now);
+      plan = { kind: 'run', t0: now };
+      const LONG = 600; // секунд: столько база точно не думает
+      play([
+        { transform: rotate(angle), easing: EASE_IN },
+        { transform: rotate(angle + (V * R) / 2), offset: R / LONG },
+        { transform: rotate(angle + (V * R) / 2 + V * (LONG - R)) },
+      ], { duration: LONG * 1000 });
       cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(frame);
+      raf = requestAnimationFrame(watch);
     },
     // Остановиться на секторе key: место внутри сектора — случайное, но не у самой границы.
     land(key) {
       return new Promise((done) => {
+        const now = performance.now();
+        const [from, speed] = state(now);
         const s = segs.find((x) => x.o.key === key) ?? segs[0];
         const phi = s.from + s.span * (0.2 + Math.random() * 0.6);
         const v = Math.max(speed, V * 0.6);
-        const rest = ((((-phi - angle) % 360) + 360) % 360);
+        const rest = ((((-phi - from) % 360) + 360) % 360);
         const A = 360 * (reduced() ? 1 : 3) + rest;
-        stop = { from: angle, A, T: ((4 * A) / v) * 1000, t0: performance.now(), done };
-        if (mode !== 'run') { last = 0; cancelAnimationFrame(raf); raf = requestAnimationFrame(frame); }
-        mode = 'stop';
+        const T = ((4 * A) / v); // секунд: начальная скорость кривой — 4 средних
+        angle = from;
+        plan = { kind: 'stop', t0: now, A, T };
+        play([{ transform: rotate(from) }, { transform: rotate(from + A) }],
+          { duration: T * 1000, easing: `cubic-bezier(${EASE_OUT.join(', ')})` });
+        const finish = () => {
+          angle = from + A;
+          plan = null;
+          cancelAnimationFrame(raf);
+          rot.style.transform = rotate(angle);
+          anim?.cancel();
+          anim = null;
+          done();
+        };
+        if (anim) anim.finished.then(finish, () => {}); else finish();
+        cancelAnimationFrame(raf);
+        raf = requestAnimationFrame(watch);
       });
     },
-    kill() { cancelAnimationFrame(raf); mode = 'idle'; },
+    kill() { cancelAnimationFrame(raf); anim?.cancel(); anim = null; plan = null; },
   };
 }
 
@@ -261,7 +330,7 @@ export function rouletteCard(s, settings, { isToday, isAdmin }) {
     if (isAdmin) {
       return html`<section class="card rl-card"><div class="row"><span class="rl-tag">🎰 ${ROULETTE}</span>
         <span class="chip">ещё не крутил</span></div>
-        <p class="label">Друг ещё не крутил колесо.${cfg.lock ? ' Пока не крутанёт, подходы у него закрыты.' : ''}</p></section>`;
+        <p class="label">Друг ещё не крутил колесо.${cfg.lock ? ' Пока не крутанёт или не откажется, подходы у него закрыты.' : ''}</p></section>`;
     }
     const segs = sectorsOf(cfg);
     return html`<section class="card rl-card rl-cta">
@@ -274,7 +343,15 @@ export function rouletteCard(s, settings, { isToday, isAdmin }) {
         </div>
       </div>
       <button type="button" class="btn rl-go" data-rl-spin>🎰 Крутить</button>
-      ${cfg.lock ? html`<p class="label center">🔒 Подходы откроются, когда крутанёшь.</p>` : ''}
+      <button type="button" class="ghost rl-skip-btn" data-rl-skip>Не крутить сегодня</button>
+      ${cfg.lock ? html`<p class="label center">🔒 Подходы откроются, когда крутанёшь колесо или откажешься от него.</p>` : ''}
+    </section>`;
+  }
+  if (sp.key === 'skip') {
+    return html`<section class="card rl-card rl-skip">
+      <div class="row"><span class="rl-tag">🎰 ${ROULETTE}</span><span class="chip">🚫 без колеса</span></div>
+      <p class="label">${isAdmin ? 'Друг отказался от колеса' : isToday ? 'Сегодня без колеса' : 'В этот день без колеса'}:
+        очки за подходы как обычно — ${baseText(s)}.</p>
     </section>`;
   }
   const o = outcome(sp.key);
@@ -309,12 +386,12 @@ export function rouletteCard(s, settings, { isToday, isAdmin }) {
   </section>`;
 }
 
-// Подходы закрыты, пока друг не крутанул колесо и не решил с револьвером (если генерал так настроил).
+// Подходы закрыты, пока друг не крутанул колесо и не решил с револьвером или не отказался от колеса (если генерал так настроил).
 export const rouletteLocked = (s, settings) => Boolean(s?.need && rouletteCfg(settings?.roulette).lock);
 
 // Чип в шапке «Сегодня»: что выпало.
 export function rouletteChip(s) {
-  if (!s?.spin || s.spin.gun === 'offer') return '';
+  if (!s?.spin || s.spin.gun === 'offer' || s.spin.key === 'skip') return '';
   const o = outcome(s.spin.key);
   return html`<span class="chip rl-head-chip" style="--rl-color: ${o.color}">🎰 ${o.icon} ×${s.mult}</span>`;
 }
@@ -322,6 +399,18 @@ export function rouletteChip(s) {
 export function wireRoulette(el, ctx, s) {
   el.querySelector('[data-rl-spin]')?.addEventListener('click', () => openRoulette(ctx, s));
   el.querySelector('[data-rl-gun]')?.addEventListener('click', () => openRoulette(ctx, s, { gun: true }));
+  const skip = el.querySelector('[data-rl-skip]');
+  skip?.addEventListener('click', async () => {
+    if (!confirm('Не крутить колесо сегодня? Очки за подходы будут как обычно, а крутить сегодня уже не получится.')) return;
+    skip.disabled = true;
+    try {
+      await ctx.api.skipRoulette();
+      ctx.refresh();
+    } catch (err) {
+      skip.disabled = false;
+      ctx.toast(err.message);
+    }
+  });
 }
 
 // ── Шансы: что может выпасть ──
@@ -368,7 +457,8 @@ export function openRoulette(ctx, s, { gun = false } = {}) {
   const stage = layer.querySelector('.rl-stage');
   const panel = layer.querySelector('.rl-panel');
   const box = stage.querySelector('.rl-wheel');
-  const pin = box.querySelector('.rl-pin');
+  const pin = box.querySelector('.rl-pinbox');
+  const hitbox = box.querySelector('.rl-hitbox');
   const hub = box.querySelector('[data-rl-hub]');
   let busy = false;
   let changed = false;
@@ -449,19 +539,38 @@ export function openRoulette(ctx, s, { gun = false } = {}) {
     box.classList.remove('rl-spinning');
     const o = outcome(key);
     sheet.style.setProperty('--rl-color', o.color);
+    bloom();
     box.classList.add('rl-won');
-    box.querySelectorAll('.rl-sec, .rl-lab').forEach((p) => p.classList.toggle('rl-hit', p.dataset.key === key));
-    const hit = box.querySelector('.rl-sec.rl-hit');
-    hit?.parentNode.append(hit); // поверх соседей, чтобы обводка не пряталась
+    hitbox.innerHTML = hitHtml(segs.find((x) => x.o.key === key), cfg);
     hub.textContent = o.icon;
     hub.classList.add('rl-hub-won');
   }
 
   function reset() {
     box.classList.remove('rl-won');
-    box.querySelectorAll('.rl-hit').forEach((p) => p.classList.remove('rl-hit'));
+    hitbox.innerHTML = '';
     hub.textContent = 'КРУТИ';
     hub.classList.remove('rl-hub-won');
+  }
+
+  // Вспышка цвета выпавшего сектора за колесом.
+  function bloom() {
+    sheet.classList.remove('rl-bloom');
+    void sheet.offsetWidth;
+    sheet.classList.add('rl-bloom');
+  }
+
+  // Колесо уменьшается, чтобы освободить место итогу. Размер меняется сразу, а глазу — плавно: transform на видеочипе.
+  function shrink() {
+    if (stage.classList.contains('rl-small')) return;
+    const a = box.getBoundingClientRect();
+    stage.classList.add('rl-small');
+    const b = box.getBoundingClientRect();
+    if (!b.width || reduced()) return;
+    box.animate?.([
+      { transformOrigin: '0 0', transform: `translate(${a.left - b.left}px, ${a.top - b.top}px) scale(${a.width / b.width})` },
+      { transformOrigin: '0 0', transform: 'none' },
+    ], { duration: 500, easing: 'ease' });
   }
 
   function showRespin() {
@@ -504,7 +613,7 @@ export function openRoulette(ctx, s, { gun = false } = {}) {
     if (tone === 'gold') confetti();
     if (tone === 'awful') shake();
     const star = sp.key === 'star';
-    stage.classList.add('rl-small');
+    shrink();
     panel.innerHTML = String(html`<div class="rl-result rl-${tone}" style="--rl-color: ${o.color}">
       ${tone === 'gold' ? html`<p class="rl-banner">ДЖЕКПОТ</p>` : ''}
       <p class="rl-res-name">${o.icon} ${o.name}${star ? '' : html` <span class="rl-res-add">${addText(sp.add)}</span>`}</p>
@@ -619,6 +728,7 @@ export function openRoulette(ctx, s, { gun = false } = {}) {
 }
 
 // Барабан револьвера: гнёзда по кругу, сверху — ствол. Какое гнездо с патроном, не видно до выстрела.
+// Барабан крутится отдельным слоем (.rl-drum-rot), патрон и ствол лежат поверх и не перерисовываются.
 function drumHtml(n) {
   const holes = Array.from({ length: n }, (_, i) => {
     const [x, y] = [100 + 54 * Math.sin((2 * Math.PI * i) / n), 100 - 54 * Math.cos((2 * Math.PI * i) / n)];
@@ -627,25 +737,25 @@ function drumHtml(n) {
       <ellipse class="rl-flute" cx="${f2(fx)}" cy="${f2(fy)}" rx="9" ry="14" transform="rotate(${f2((360 * (i + 0.5)) / n)} ${f2(fx)} ${f2(fy)})"/>`;
   }).join('');
   return raw(`<div class="rl-drum">
-    <svg viewBox="0 0 200 228" aria-hidden="true">
+    <div class="rl-drum-rot"><svg viewBox="0 0 200 200" aria-hidden="true">
       <defs>
         <radialGradient id="rl-steel" cx="40%" cy="35%" r="70%">
           <stop offset="0" stop-color="#C9CFD8"/><stop offset=".55" stop-color="#7C8492"/><stop offset="1" stop-color="#3A404B"/>
         </radialGradient>
+      </defs>
+      <circle cx="100" cy="100" r="96" fill="url(#rl-steel)" stroke="#1B1E24" stroke-width="3"/>
+      ${holes}
+      <circle cx="100" cy="100" r="15" fill="#2A2F38" stroke="#9AA2AE" stroke-width="2"/>
+      <circle cx="100" cy="100" r="5" fill="#9AA2AE"/>
+    </svg></div>
+    <svg class="rl-drum-top" viewBox="0 0 200 228" aria-hidden="true">
+      <defs>
         <radialGradient id="rl-brass" cx="40%" cy="35%" r="70%">
           <stop offset="0" stop-color="#FFE9A3"/><stop offset=".6" stop-color="#E0A92A"/><stop offset="1" stop-color="#8A5A00"/>
         </radialGradient>
       </defs>
-      <g transform="translate(0 28)">
-        <g class="rl-drum-rot">
-          <circle cx="100" cy="100" r="96" fill="url(#rl-steel)" stroke="#1B1E24" stroke-width="3"/>
-          ${holes}
-          <circle cx="100" cy="100" r="15" fill="#2A2F38" stroke="#9AA2AE" stroke-width="2"/>
-          <circle cx="100" cy="100" r="5" fill="#9AA2AE"/>
-        </g>
-        <circle class="rl-shell" cx="100" cy="46" r="17" fill="url(#rl-brass)"/>
-        <circle class="rl-shell" cx="100" cy="46" r="6" fill="#B07A10" stroke="#5A3A00" stroke-width="1.5"/>
-      </g>
+      <circle class="rl-shell" cx="100" cy="74" r="17" fill="url(#rl-brass)"/>
+      <circle class="rl-shell" cx="100" cy="74" r="6" fill="#B07A10" stroke="#5A3A00" stroke-width="1.5"/>
       <rect class="rl-barrel" x="86" y="0" width="28" height="30" rx="5"/>
       <rect class="rl-barrel-hole" x="94" y="6" width="12" height="20" rx="4"/>
     </svg>
@@ -671,7 +781,8 @@ export function rouletteRules(settings, isAdmin) {
   const cfg = rouletteCfg(settings?.roulette);
   if (!isAdmin) {
     return cfg.on ? html`<section class="card"><h2 class="h2">🎰 ${ROULETTE}</h2>
-      <p class="label">Каждый тренировочный день крутишь колесо на «Сегодня». Выпавшее число прибавляется к множителю очков за подходы.</p>
+      <p class="label">Каждый тренировочный день крутишь колесо на «Сегодня». Выпавшее число прибавляется к множителю очков за подходы.
+        Не хочешь рисковать — можно не крутить, тогда множитель как обычно.</p>
       ${oddsHtml(cfg)}</section>` : '';
   }
   const g = cfg.gun;
@@ -679,10 +790,11 @@ export function rouletteRules(settings, isAdmin) {
   return html`<section class="card" id="rl-rules">
     <div class="row"><h2 class="h2">🎰 ${ROULETTE}</h2><span class="chip ${cfg.on ? 'chip-on' : ''}" id="rl-state">${cfg.on ? 'включена' : 'выключена'}</span></div>
     <p class="label">Каждый тренировочный день друг сам крутит колесо на «Сегодня». Выпавшее число прибавляется к множителю очков за подходы
-      (серия или «Всё или ничего»). Событие дня и пари рулетка не трогает. Начисляется, когда день закончился и всё проверено.</p>
+      (серия или «Всё или ничего»). Можно и не крутить — тогда множитель как обычно, а крутить в этот день уже нельзя.
+      Событие дня и пари рулетка не трогает. Начисляется, когда день закончился и всё проверено.</p>
     <label class="row switch-row"><span>Колесо каждый тренировочный день</span>
       <input type="checkbox" class="switch" data-rl="on" ${cfg.on ? html`checked` : ''}></label>
-    <label class="row switch-row"><span>Подходы — только после колеса</span>
+    <label class="row switch-row"><span>Подходы — только после колеса (или отказа от него)</span>
       <input type="checkbox" class="switch" data-rl="lock" ${cfg.lock ? html`checked` : ''}></label>
     <label class="row rule-row"><span>Множитель дня не ниже (пусто — без пола)</span>
       <input class="input num-in" type="text" inputmode="decimal" data-rl="floor" value="${comma(cfg.floor)}" placeholder="—"></label>

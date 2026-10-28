@@ -309,7 +309,7 @@ function eventApply(a, date) {
 
 // «Русская рулетка» — как roulette_state в базе. null — в этот день колеса нет.
 // m — множитель до рулетки (серия или «Всё или ничего»), mult — после, bonus — сколько рулетка даёт сверху.
-// need — сегодня друг ещё должен крутить колесо или решить с револьвером.
+// need — сегодня друг ещё должен крутить колесо (или отказаться от него) или решить с револьвером.
 function rouletteState(a, date) {
   const sp = db.spins.find((x) => x.athlete_id === a && x.date === date);
   const cfg = rouletteCfg(db.settings.roulette);
@@ -1122,7 +1122,7 @@ export const api = {
     const a = current.id;
     const t = today();
     const s = rouletteState(a, t);
-    if (s?.spin) fail('Колесо сегодня уже крутили');
+    if (s?.spin) fail(s.spin.key === 'skip' ? 'Сегодня колесо уже пропущено' : 'Колесо сегодня уже крутили');
     if (!s?.need) fail('Сегодня колеса нет');
     const cfg = rouletteCfg(db.settings.roulette);
     const no = db.events.some((e) => e.athlete_id === a && e.date === t) && !FORCE.chain ? ['star'] : [];
@@ -1137,6 +1137,18 @@ export const api = {
       db.events = db.events.filter((e) => !(e.athlete_id === a && e.date === t && e.score === null));
       db.events.push({ athlete_id: a, date: t, title: 'Звезда с колеса', game: 'a', score: null, done: false });
     }
+    return this.rouletteDay(t);
+  },
+
+  // «Не крутить сегодня»: множитель как обычно, крутить в этот день уже нельзя — как skip_roulette.
+  async skipRoulette() {
+    needAthlete();
+    const a = current.id;
+    const t = today();
+    const s = rouletteState(a, t);
+    if (s?.spin) fail(s.spin.key === 'skip' ? 'Сегодня колесо уже пропущено' : 'Колесо сегодня уже крутили');
+    if (!s?.need) fail('Сегодня колеса нет');
+    db.spins.push({ athlete_id: a, date: t, chain: [], key: 'skip', add: 0, gun: null, spun_at: stamp(), decided_at: null });
     return this.rouletteDay(t);
   },
 

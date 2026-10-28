@@ -913,6 +913,8 @@ body.gd-lock { overflow: hidden; }
 .rl-cta-row { display: flex; align-items: center; gap: 14px; }
 .rl-cta-wheel { flex: none; width: 96px; }
 .rl-cta-title { font: 700 19px/1.2 'Unbounded', sans-serif; margin: 0; }
+.rl-skip-btn { width: 100%; margin-top: -4px; color: var(--muted); }
+.rl-skip { --rl-color: #59606C; }
 .rl-lock-note { border-color: rgba(255, 213, 74, .5); color: var(--gold); }
 .rl-locked { display: flex; flex-direction: column; gap: 16px; opacity: .42; filter: grayscale(.7); pointer-events: none; user-select: none; }
 
@@ -935,7 +937,7 @@ body.gd-lock { overflow: hidden; }
 
 /* Окно с колесом */
 .rl-overlay {
-  position: fixed; inset: 0; z-index: 42; background: rgba(6, 7, 10, .86); backdrop-filter: blur(4px);
+  position: fixed; inset: 0; z-index: 42; background: rgba(6, 7, 10, .9);
   display: flex; align-items: flex-end; justify-content: center;
 }
 .rl-sheet {
@@ -943,26 +945,37 @@ body.gd-lock { overflow: hidden; }
   padding: 14px 16px calc(20px + env(safe-area-inset-bottom)); border-radius: 22px 22px 0 0;
   border: 1px solid rgba(255, 213, 74, .42); border-bottom: 0;
   background: radial-gradient(110% 52% at 50% 30%, color-mix(in srgb, var(--rl-color) 30%, transparent), transparent 72%), #111318;
-  display: flex; flex-direction: column; gap: 12px; animation: ev-up .28s ease-out; transition: --rl-color .6s ease;
+  display: flex; flex-direction: column; gap: 12px; animation: ev-up .28s ease-out; position: relative; isolation: isolate;
 }
+/* Вспышка цвета выпавшего сектора: отдельный слой, мигает только прозрачностью. */
+.rl-sheet::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 0; height: 560px; z-index: -1; pointer-events: none; opacity: 0;
+  background: radial-gradient(62% 52% at 50% 40%, color-mix(in srgb, var(--rl-color) 40%, transparent), transparent 72%);
+}
+.rl-bloom::before { animation: rl-bloom 1.4s ease-out forwards; }
+@keyframes rl-bloom { 18% { opacity: 1; } to { opacity: .55; } }
 .rl-sheet > * { flex-shrink: 0; }
 .rl-icon-btn { min-height: 36px; width: 36px; font-size: 16px; }
 .rl-stage { display: flex; justify-content: center; padding: 4px 0 0; }
 
 .rl-wheel { position: relative; width: min(84vw, 340px); aspect-ratio: 1; margin: 0 auto; }
 .rl-small .rl-wheel { width: min(60vw, 240px); }
-.rl-stage .rl-wheel { transition: width .5s ease; }
 .rl-wheel::before {
   content: ''; position: absolute; inset: 5%; border-radius: 50%; pointer-events: none;
   box-shadow: 0 0 56px 10px color-mix(in srgb, var(--rl-color) 42%, transparent), 0 20px 44px rgba(0, 0, 0, .65);
-  transition: box-shadow .6s ease;
 }
 .rl-wheel-mini { width: 96px; }
 .rl-wheel-mini::before { box-shadow: 0 0 22px 2px rgba(255, 213, 74, .3); }
-.rl-disc, .rl-frame { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.rl-disc { will-change: transform; }
-.rl-frame { pointer-events: none; overflow: visible; }
-.rl-wheel-mini .rl-disc { animation: rl-idle 16s linear infinite; }
+/* Слои колеса: крутится и мигает только то, что видеочип умеет двигать без перерисовки. */
+.rl-clip, .rl-rot, .rl-frame, .rl-lit, .rl-hitbox, .rl-hit-dim, .rl-ring { position: absolute; inset: 0; }
+/* Круглая обрезка: границы вращающегося слоя не меняются, и остальное окно не перерисовывается. */
+.rl-clip { border-radius: 50%; overflow: hidden; }
+.rl-rot, .rl-frame, .rl-hub { will-change: transform; }
+.rl-disc, .rl-frame, .rl-lit svg, .rl-hitbox svg { display: block; width: 100%; height: 100%; }
+.rl-disc { position: absolute; inset: 0; }
+.rl-frame, .rl-lit, .rl-hitbox, .rl-pinbox { pointer-events: none; }
+.rl-frame, .rl-lit svg { overflow: visible; }
+.rl-wheel-mini .rl-rot { animation: rl-idle 16s linear infinite; }
 @keyframes rl-idle { to { transform: rotate(360deg); } }
 .rl-ic { text-anchor: middle; dominant-baseline: central; }
 .rl-val { font-family: 'Unbounded', sans-serif; font-weight: 700; text-anchor: middle; dominant-baseline: central; }
@@ -970,20 +983,23 @@ body.gd-lock { overflow: hidden; }
 .rl-inner { fill: #15171C; stroke: rgba(255, 213, 74, .6); stroke-width: 3; }
 .rl-spokes line { stroke: rgba(255, 226, 140, .55); stroke-width: 2; }
 .rl-spokes circle { fill: #FFE9A3; stroke: #6B5212; stroke-width: 1; }
-.rl-won .rl-spokes { opacity: .5; }
 .rl-rim-line { stroke: rgba(255, 213, 74, .55); stroke-width: 1.5; }
-.rl-bulb { fill: #FFE9A3; animation: rl-bulb 1.2s steps(1) infinite; }
-.rl-b1 { animation-delay: .6s; }
-@keyframes rl-bulb { 50% { fill: #4A3D17; } }
-.rl-spinning .rl-bulb { animation-duration: .24s; }
-.rl-spinning .rl-b1 { animation-delay: .12s; }
-.rl-won .rl-bulb { fill: var(--rl-color); animation: rl-bulb-won .45s ease-in-out 8 alternate; }
-@keyframes rl-bulb-won { from { fill: #FFF6D8; } to { fill: var(--rl-color); } }
-.rl-pin { transform-box: fill-box; transform-origin: 50% 22%; }
-.rl-sec, .rl-lab { transition: opacity .35s ease; }
-.rl-won .rl-sec:not(.rl-hit), .rl-won .rl-lab:not(.rl-hit) { opacity: .26; }
-.rl-sec.rl-hit { stroke: #FFF4C8; stroke-width: 4; stroke-linejoin: round; animation: rl-hit .6s ease-in-out infinite alternate; }
-@keyframes rl-hit { to { stroke-opacity: .2; } }
+.rl-bulbs-off circle { fill: #4A3D17; }
+.rl-lit { will-change: opacity; animation: rl-blink 1.2s steps(1) infinite; }
+.rl-lit circle { fill: #FFE9A3; }
+.rl-lit-1 { animation-delay: -.6s; }
+@keyframes rl-blink { 50% { opacity: 0; } }
+.rl-spinning .rl-lit { animation-duration: .24s; }
+.rl-spinning .rl-lit-1 { animation-delay: -.12s; }
+.rl-won .rl-lit circle { fill: var(--rl-color); }
+.rl-won .rl-lit { animation: rl-lit-won .45s ease-in-out 8 alternate; }
+@keyframes rl-lit-won { to { opacity: .25; } }
+.rl-pinbox { position: absolute; left: 45%; top: -.5%; width: 10%; height: 14%; transform-origin: 50% 25%; will-change: transform; }
+.rl-pinbox svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.rl-hit-dim { animation: rl-fade .35s ease-out both; }
+@keyframes rl-fade { from { opacity: 0; } }
+.rl-ring { will-change: opacity; animation: rl-ring .6s ease-in-out infinite alternate; }
+@keyframes rl-ring { to { opacity: .2; } }
 .rl-hub {
   position: absolute; left: 50%; top: 50%; width: 27%; aspect-ratio: 1; transform: translate(-50%, -50%); padding: 0;
   border-radius: 50%; border: 3px solid #3B2C00; cursor: pointer; color: #2A1F00;
@@ -1036,16 +1052,17 @@ body.gd-lock { overflow: hidden; }
 .rl-banner-ok { color: var(--accent); text-shadow: 0 0 26px rgba(198, 244, 50, .55); }
 
 /* Револьвер */
-.rl-drum { width: min(56vw, 210px); margin: 6px auto 0; }
-.rl-drum svg { display: block; width: 100%; height: auto; overflow: visible; }
-.rl-drum-rot { transform-box: fill-box; transform-origin: center; }
+.rl-drum { position: relative; width: min(56vw, 210px); aspect-ratio: 200 / 228; margin: 6px auto 0; }
+.rl-drum svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.rl-drum-rot { position: absolute; left: 0; right: 0; top: 12.28%; height: 87.72%; will-change: transform; }
+.rl-drum-top { position: absolute; inset: 0; }
 .rl-drum-spin { animation: rl-drum 1.5s cubic-bezier(.1, .7, .25, 1) forwards; }
 @keyframes rl-drum { to { transform: rotate(1440deg); } }
 .rl-hole { fill: #14161B; stroke: #4A515C; stroke-width: 2; }
 .rl-flute { fill: #3A404B; opacity: .55; }
 .rl-shell { opacity: 0; transition: opacity .2s; }
 .rl-drum-bang .rl-shell { opacity: 1; }
-.rl-drum-bang svg { animation: rl-recoil .45s ease-out; }
+.rl-drum-bang { animation: rl-recoil .45s ease-out; }
 @keyframes rl-recoil { 20% { transform: translateY(-14px) rotate(-5deg); } }
 .rl-drum-click .rl-hole-top { stroke: var(--accent); stroke-width: 3; }
 .rl-drum-pass { opacity: .4; transition: opacity .4s; }
@@ -1074,7 +1091,10 @@ body.gd-lock { overflow: hidden; }
 .rl-sum { padding: 10px 12px; border-radius: 12px; background: var(--bar); display: flex; flex-direction: column; gap: 4px; }
 .rl-sum p { margin: 0; font-size: 13px; }
 
+/* Под открытым окном страница не анимируется — телефону меньше работы. */
+.gd-lock #view *, .gd-lock #view *::after, .gd-lock .ev-star * { animation-play-state: paused; }
+
 @media (prefers-reduced-motion: reduce) {
-  .rl-bulb, .rl-won .rl-bulb, .rl-wheel-mini .rl-disc, .rl-go::after, .rl-sec.rl-hit, .rl-banner, .rl-banner-bad, .rl-banner-ok,
-  .rl-result, .rl-shake, .rl-flash, .rl-hub-won, .rl-drum-bang svg, .rl-rolling { animation: none; }
+  .rl-lit, .rl-won .rl-lit, .rl-wheel-mini .rl-rot, .rl-go::after, .rl-ring, .rl-hit-dim, .rl-bloom::before, .rl-banner, .rl-banner-bad,
+  .rl-banner-ok, .rl-result, .rl-shake, .rl-flash, .rl-hub-won, .rl-drum-bang, .rl-rolling { animation: none; }
 }
