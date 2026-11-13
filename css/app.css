@@ -1110,7 +1110,7 @@ body.gd-lock { overflow: hidden; }
 .beyond-card .news-n { background: var(--bad); }
 .pari-news { align-items: stretch; z-index: 60; }
 .pari-news-sheet {
-  height: 100dvh; max-width: 520px; border-radius: 0; border: 0; justify-content: center;
+  height: 100dvh; max-width: 520px; border-radius: 0; border: 0; justify-content: flex-start; padding-top: calc(72px + env(safe-area-inset-top));
   background: radial-gradient(110% 50% at 50% 0%, rgba(255, 138, 61, .22), transparent 65%), var(--surface);
 }
 .pari-news-sheet .row { position: absolute; top: calc(16px + env(safe-area-inset-top)); left: 16px; right: 16px; max-width: 488px; margin: 0 auto; }
@@ -1125,3 +1125,4 @@ body.gd-lock { overflow: hidden; }
   position: absolute; top: 4px; left: calc(50% + 6px); min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
   background: var(--bad); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
 }
+.pari-news-late { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 14px; border: 1px solid var(--bad); background: rgba(255, 138, 61, .10); }

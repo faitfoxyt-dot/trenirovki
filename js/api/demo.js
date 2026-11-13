@@ -571,11 +571,16 @@ function pariState(a, date) {
   else if (b.review === 'rejected' || date < today()) state = 'lost';
   return { ...b, date, state, points: b.prize, test: isTestDay(date) };
 }
-// Видео «#пари» от бота: прикрепить к ставке дня и отдать генералу.
-function pariVideo(a, date, url) {
-  const b = pariBetAt(a, date);
-  if (!b || b.review === 'accepted') return false;
-  Object.assign(db.pari.find((p) => p.id === b.pari_id).bets[b.n - 1], { video_url: url, video_at: stamp(), review: 'pending', reviewed_at: null });
+// Видео «#пари» от бота — как pari_video в базе: ставка этого дня или двух прошлых,
+// при нескольких — та, чьё название есть в подписи.
+function pariVideo(a, date, url, caption = '') {
+  const cap = caption.toLowerCase();
+  let pick = null;
+  [0, 1, 2].map((k) => pariBetAt(a, addDays(date, -k))).filter((b) => b && b.review !== 'accepted').forEach((b) => {
+    if (!pick || (cap.includes(b.name.toLowerCase()) && !cap.includes(pick.name.toLowerCase()))) pick = b;
+  });
+  if (!pick) return false;
+  Object.assign(db.pari.find((p) => p.id === pick.pari_id).bets[pick.n - 1], { video_url: url, video_at: stamp(), review: 'pending', reviewed_at: null });
   return true;
 }
 function pariPending() {

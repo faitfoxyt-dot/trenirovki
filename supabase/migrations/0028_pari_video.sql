@@ -1,7 +1,8 @@
 -- 0028: «За гранью предела» — подход на пари отдельным видео.
 -- Ставка больше не ищется среди подходов плана. В день пари друг шлёт видео в тему «Видео»
 -- с подписью «#пари Название», бот прикрепляет его к ставке дня, генерал в «Проверке»
--- засчитывает (приз) или нет. Не засчитал — в тот же день можно прислать новое видео.
+-- засчитывает (приз) или нет. Видео можно прислать в день ставки или в два следующих дня;
+-- не засчитал — можно прислать новое.
 
 alter table public.pari_bets
   add column if not exists video_url text,
@@ -78,20 +79,35 @@ begin
   return true;
 end $$;
 
--- Видео «#пари» на этот день: прикрепить к ставке и отдать генералу. Текст ответа или null — всё ок.
-create or replace function public.pari_video(p_athlete uuid, p_date date, p_url text) returns text
+-- Видео «#пари» от бота: прикрепить к ставке и отдать генералу. Подходит ставка этого дня или двух
+-- прошлых (не успел скинуть — можно позже); если их несколько, берём ту, чьё название есть в подписи.
+-- Возвращает текст ответа в группе или null — всё ок.
+create or replace function public.pari_video(p_athlete uuid, p_date date, p_url text, p_caption text) returns text
 language plpgsql security definer set search_path = public as $$
 declare
-  b record;
-  x pari_bets;
+  b      record;
+  x      pari_bets;
+  k      int;
+  won    boolean := false;
+  p_id   bigint;
+  p_n    int;
+  p_name text;
 begin
-  select * into b from pari_bet_at(p_athlete, p_date);
-  if not found then return 'В этот день у тебя нет пари — видео не засчитано.'; end if;
   perform lock_athlete(p_athlete);
-  select * into x from pari_bets where pari_id = b.pari_id and n = b.n for update;
-  if x.review = 'accepted' then return 'Пари за этот день уже засчитано 🏆'; end if;
+  for k in 0..2 loop
+    for b in select * from pari_bet_at(p_athlete, p_date - k) loop
+      select * into x from pari_bets where pari_id = b.pari_id and n = b.n;
+      if x.review = 'accepted' then won := true; continue; end if;
+      if p_id is null or (strpos(lower(p_caption), lower(b.name)) > 0 and strpos(lower(p_caption), lower(p_name)) = 0) then
+        p_id := b.pari_id; p_n := b.n; p_name := b.name;
+      end if;
+    end loop;
+  end loop;
+  if p_id is null then
+    return case when won then 'Пари уже засчитано 🏆' else 'Сейчас у тебя нет пари — видео не засчитано.' end;
+  end if;
   update pari_bets set video_url = p_url, video_at = now(), review = 'pending', reviewed_at = null
-  where pari_id = b.pari_id and n = b.n;
+  where pari_id = p_id and n = p_n;
   return null;
 end $$;
 
@@ -142,7 +158,7 @@ begin
 
   -- «#пари …» — подход на ставку «За гранью предела»: к ставке дня, решает генерал.
   if cap ~* '#\s*пари' then
-    msg := pari_video(a.id, dt, url);
+    msg := pari_video(a.id, dt, url, cap);
     if msg is null then
       stat := 'matched';
       res := jsonb_build_object('react', '👀');

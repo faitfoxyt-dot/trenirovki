@@ -28,7 +28,7 @@ export async function render(el, ctx, args, alive) {
     return;
   }
 
-  const [day, logs, mornings, sick, wallet, catalog, allin, weighed, swaps, video, waiting, event, pari, roulette] = await Promise.all([
+  const [day, logs, mornings, sick, wallet, catalog, allin, weighed, swaps, video, waiting, event, pari, roulette, pariBefore] = await Promise.all([
     api.openDay(date, isAdmin ? athleteId : undefined),
     api.logs(athleteId, date, date),
     api.mornings(athleteId, date, date),
@@ -43,7 +43,10 @@ export async function render(el, ctx, args, alive) {
     api.eventDay ? api.eventDay(date, isAdmin ? athleteId : undefined) : null,
     api.pariDay ? api.pariDay(date, isAdmin ? athleteId : undefined) : null,
     api.rouletteDay ? api.rouletteDay(date, isAdmin ? athleteId : undefined) : null,
+    // Пари двух прошлых дней без видео: видео на них ещё можно прислать.
+    api.pariDay && date === clock.today ? Promise.all([1, 2].map((k) => api.pariDay(addDays(date, -k), isAdmin ? athleteId : undefined))) : [],
   ]);
+  const pariLate = pariBefore.filter((p) => p && p.state === 'lost' && !p.review);
   if (!alive()) return;
 
   const status = day ? day.status : null;
@@ -91,6 +94,7 @@ export async function render(el, ctx, args, alive) {
     ${video.on && !isAdmin && isToday && status === 'training' && !beforeStart ? videoBanner(seenBanner(), day.plan) : ''}
 
     ${allin && status === 'training' && !beforeStart ? allinCard(allin, isToday) : ''}
+    ${pariLate.map((p) => pariCard(p, false, isAdmin, true))}
     ${pari && !beforeStart ? pariCard(pari, isToday, isAdmin) : ''}
 
     ${!isAdmin && isToday && clock.grace ? html`<a class="notice" href="#/day/${yesterday}">
@@ -129,12 +133,12 @@ export async function render(el, ctx, args, alive) {
   const morningEl = el.querySelector('#morning');
   if (morningEl) renderMorning(morningEl, ctx, state, !isAdmin && isToday);
 
-  if (!isAdmin && isToday && !seenPariNews() && !document.querySelector('.pari-news')) pariNews();
-  el.querySelector('[data-pari-cap]')?.addEventListener('click', async (e) => {
-    const text = e.currentTarget.dataset.pariCap;
+  if (!isAdmin && isToday && !seenPariNews() && !document.querySelector('.pari-news')) pariNews(pariLate[0]);
+  el.querySelectorAll('[data-pari-cap]').forEach((b) => b.addEventListener('click', async () => {
+    const text = b.dataset.pariCap;
     const ok = await copy(text);
-    el.querySelector('.pari-copy-note').textContent = ok ? `Скопировано: ${text}` : 'Не получилось скопировать — перепиши подпись вручную';
-  });
+    b.closest('.beyond-card').querySelector('.pari-copy-note').textContent = ok ? `Скопировано: ${text}` : 'Не получилось скопировать — перепиши подпись вручную';
+  }));
 
   el.querySelector('[data-news]')?.addEventListener('click', (e) => {
     try { localStorage.setItem(BANNER_KEY, e.currentTarget.dataset.news === 'ok' ? '1' : '0'); } catch { /* без памяти — покажем снова */ }
@@ -262,23 +266,25 @@ function allinCard(a, isToday) {
 
 // «За гранью предела»: ставка на сегодня — отдельный подход, не из плана. Видео с подписью «#пари …»
 // в тему «Видео», приз начисляет генерал, когда посмотрит.
-function pariCard(p, isToday, isAdmin) {
-  const state = PARI_STATE[p.state];
+// late — ставка прошлого дня без видео: сделал, но не скинул — видео ещё можно прислать (2 дня).
+function pariCard(p, isToday, isAdmin, late = false) {
+  const state = late ? { icon: '📹', text: 'ждёт видео' } : PARI_STATE[p.state];
   const times = (n) => pariTimes(n, unitOf(p));
   const cap = pariCaption(p);
   const prize = p.test ? `приз ${p.prize} (в тестовый период очков нет)` : `приз ${p.prize}`;
-  const canSend = isToday && !isAdmin && (p.state === 'wait' || p.state === 'lost');
+  const canSend = !isAdmin && (late || (isToday && (p.state === 'wait' || p.state === 'lost')));
   return html`<section class="card beyond-card">
     <div class="row"><h2 class="h2">🔥 ${PARI}</h2><span class="chip">${state.icon} ${state.text}</span></div>
-    <p>${isToday ? 'Сегодня спор с генералом' : 'Спор с генералом'}: <b>${p.name}</b> — ${times(p.reps)} за один подход.</p>
-    ${p.state === 'won' ? html`<p class="ok strong">Генерал засчитал! ${p.test ? prize : `+${p.prize} очков`}</p>`
+    <p>${late ? `Пари за ${dayTitle(p.date)}` : isToday ? 'Сегодня спор с генералом' : 'Спор с генералом'}: <b>${p.name}</b> — ${times(p.reps)} за один подход.</p>
+    ${late ? html`<p class="strong">Сделал, но не скинул видео? Ещё не поздно — пришли его до конца ${dayTitle(addDays(p.date, 2))}.</p>`
+      : p.state === 'won' ? html`<p class="ok strong">Генерал засчитал! ${p.test ? prize : `+${p.prize} очков`}</p>`
       : p.state === 'check' ? html`<p class="strong">Видео у генерала. Если всё честно — ${prize}.</p>`
       : p.state === 'lost' ? html`<p class="warn-strong">${p.review === 'rejected' ? 'Генерал не засчитал' : 'Видео не пришло'} — приза нет.
           ${isToday ? 'Можешь прислать новое видео до конца дня.' : 'Обычные очки за день остаются.'}</p>`
       : ''}
-    ${canSend || (isAdmin && p.state === 'wait') ? html`<p class="label">Это отдельный подход, не из плана — сделай его когда удобно.</p>
+    ${canSend || (isAdmin && (p.state === 'wait' || late)) ? html`${late ? '' : html`<p class="label">Это отдельный подход, не из плана — сделай его когда удобно.</p>`}
       <ol class="news-steps">
-        <li><span class="news-n">1</span><span>Сними один подход на видео: ${times(p.reps)} или больше.</span></li>
+        <li><span class="news-n">1</span><span>${late ? 'Возьми видео этого подхода' : 'Сними один подход на видео'}: ${times(p.reps)} или больше.</span></li>
         <li><span class="news-n">2</span><span>Отправь в группу, в тему «Видео», с подписью:</span></li>
       </ol>
       <div class="pari-cap"><span class="news-cap">${cap}</span>
@@ -292,31 +298,42 @@ function pariCard(p, isToday, isAdmin) {
 function seenPariNews() {
   try { return localStorage.getItem(PARI_NEWS_KEY) === '1'; } catch { return false; }
 }
-function pariNews(onClose) {
+// late — пари прошлого дня без видео: в новости сразу просим скинуть его видео.
+function pariNews(late) {
   const layer = document.createElement('div');
   layer.className = 'gd-overlay pari-news';
+  const cap = late ? pariCaption(late) : '#пари Удержание рюкзака в руках';
   layer.innerHTML = String(html`<div class="gd-sheet pari-news-sheet" role="dialog" aria-modal="true" aria-label="Новое от генерала">
     <div class="row"><span class="news-tag">📢 Новое от генерала</span>
       <button type="button" class="ghost icon gd-close" data-close aria-label="Закрыть">✕</button></div>
     <div class="pari-news-hero" aria-hidden="true">🔥</div>
-    <h2 class="gd-title">Пари — теперь отдельным видео</h2>
-    <p>Подход на ставку «${PARI}» больше не нужно искать в плане дня.</p>
+    <h2 class="gd-title">Пари — теперь просто видео с подписью</h2>
+    <p>Теперь так: подход на пари — отдельное видео, искать его в плане дня не нужно.</p>
     <ol class="news-steps">
-      <li><span class="news-n">1</span><span>В день пари на «Сегодня» есть карточка 🔥 с упражнением и сколько нужно сделать.</span></li>
-      <li><span class="news-n">2</span><span>Сделай этот подход отдельно, когда удобно, и сними на видео.</span></li>
-      <li><span class="news-n">3</span><span>Отправь видео в тему «Видео» с подписью из карточки — кнопка 📋 её копирует,
-        например <span class="news-cap">#пари Удержание рюкзака в руках</span></span></li>
-      <li><span class="news-n">4</span><span>Генерал посмотрит и начислит приз. Обычные подходы дня — как раньше.</span></li>
+      <li><span class="news-n">1</span><span>Сделал подход на пари — снял на видео.</span></li>
+      <li><span class="news-n">2</span><span>Скинул в Telegram, в тему «Видео», с подписью <span class="news-cap">${late ? cap : '#пари Название'}</span></span></li>
+      <li><span class="news-n">3</span><span>Генерал проверит и начислит приз.</span></li>
     </ol>
+    ${late ? html`<div class="pari-news-late">
+      <p class="strong">Твоё пари за ${dayTitle(late.date)}: ${late.name} — ${pariTimes(late.reps, unitOf(late))}.</p>
+      <p>Ты его сделал — скинь это видео сейчас с подписью:</p>
+      <div class="pari-cap"><span class="news-cap">${cap}</span>
+        <button type="button" class="ghost pari-copy" data-news-cap="${cap}">📋 Скопировать</button></div>
+      <p class="label pari-copy-note" role="status"></p>
+      <p class="label">Генерал проверит видео — если всё честно, приз ${late.prize} твой.</p>
+    </div>` : html`<p class="label">Подпись есть в карточке 🔥 на «Сегодня» — кнопка 📋 её копирует.</p>`}
     <button type="button" class="btn" data-close>Понятно</button>
   </div>`);
+  layer.querySelector('[data-news-cap]')?.addEventListener('click', async (e) => {
+    const ok = await copy(cap);
+    layer.querySelector('.pari-copy-note').textContent = ok ? `Скопировано: ${cap}` : 'Не получилось скопировать — перепиши подпись вручную';
+  });
   document.body.append(layer);
   document.body.classList.add('gd-lock');
   const close = () => {
     try { localStorage.setItem(PARI_NEWS_KEY, '1'); } catch { /* без памяти — покажем снова */ }
     layer.remove();
     document.body.classList.remove('gd-lock');
-    onClose?.();
   };
   layer.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', close));
 }
