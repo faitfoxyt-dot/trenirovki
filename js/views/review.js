@@ -2,7 +2,7 @@
 // отклонить, комментарий. Очки за подход база считает в момент решения.
 
 import { html, dayTitle } from '../util.js';
-import { MUSCLES, caption, setPoints, signed, multTag, amount, unitOf, unitText, ALLIN, PARI, pariTimes, swapItems, setNumber } from '../logic.js';
+import { MUSCLES, caption, setPoints, signed, multTag, amount, unitOf, unitText, ALLIN, PARI, pariTimes, pariCaption, swapItems, setNumber } from '../logic.js';
 
 const DECISIONS = [
   { key: 'accepted', label: 'Принять' },
@@ -23,7 +23,7 @@ function pointsTail(l) {
 
 export async function render(el, ctx, args, alive) {
   const { api, clock } = ctx;
-  const [pending, exercises, mornings, sick, ideas, swaps, byVideo] = await Promise.all([
+  const [pending, exercises, mornings, sick, ideas, swaps, byVideo, pariVideos] = await Promise.all([
     api.pendingLogs(),
     api.exercises(),
     ctx.athleteId ? api.mornings(ctx.athleteId, clock.today, clock.today) : [],
@@ -31,6 +31,7 @@ export async function render(el, ctx, args, alive) {
     ctx.athleteId ? api.ideas(ctx.athleteId) : [],
     api.pendingSwaps(),
     api.videoConfirmed ? api.videoConfirmed() : [],
+    api.pariPending ? api.pariPending() : [],
   ]);
   if (!alive()) return;
   // Номер подхода за день (#1…) — по плану дня, как его видел друг.
@@ -71,13 +72,6 @@ export async function render(el, ctx, args, alive) {
     lists.flat().filter((p) => p.kind === 'allin').forEach((p) => allinDays.add(`${p.athlete_id}|${p.date}`));
     if (!alive()) return;
   }
-  // Ставки «За гранью предела» на эти дни: подход на ставку бот не принимает — решает генерал.
-  const bets = new Map();
-  if (api.pariDay) {
-    const list = await Promise.all(groups.map((g) => api.pariDay(g.date, g.athlete)));
-    if (!alive()) return;
-    groups.forEach((g, i) => { if (list[i]) bets.set(g.key, list[i]); });
-  }
 
   el.innerHTML = String(html`
     <header class="stack-8">
@@ -86,6 +80,18 @@ export async function render(el, ctx, args, alive) {
       <div class="chips"><span class="chip" id="pending-count">Ждут проверки: ${pending.length}</span>
         <a class="chip chip-link" href="#/goal">Очки вручную →</a></div>
     </header>
+    ${pariVideos.map((v) => html`<section class="card beyond-card pari-video" data-pari="${v.pari_id}" data-n="${v.n}">
+      <div class="row"><span class="chip chip-pari">🔥 ${PARI}</span><span class="label">${dayTitle(v.date)}${many ? ` · ${athleteName(v.athlete_id)}` : ''}</span></div>
+      <h2 class="h2">Видео на пари пришло</h2>
+      <p>Ставка: <b>${v.name}</b> — ${pariTimes(v.reps, v.unit)} за один подход (+${v.pct}%).<br>
+        <span class="label">Подпись в Telegram: ${pariCaption(v)}</span></p>
+      ${v.video_url ? html`<a class="ghost link vid-link" href="${v.video_url}" target="_blank" rel="noopener">▶ Смотреть видео</a>` : ''}
+      <p class="label">Сделал ${pariTimes(v.reps, v.unit)} или больше — засчитай, друг получит ${v.prize}.</p>
+      <div class="seg">
+        <button type="button" class="pill" data-pari-ok="1">Засчитать +${v.prize}</button>
+        <button type="button" class="pill" data-pari-ok="0">Не засчитывать</button>
+      </div>
+    </section>`)}
     ${sick.map((s) => html`<section class="card sick-card" data-sick="${s.id}">
       <div class="row"><span class="chip chip-bad">Больничный</span>${many ? html`<span class="label">${athleteName(s.athlete_id)}</span>` : ''}</div>
       <h2 class="h2">Просит больничный на ${dayTitle(s.date)}</h2>
@@ -114,13 +120,10 @@ export async function render(el, ctx, args, alive) {
     ${pending.length ? groups.map((g) => html`<div class="row day-head">
       <h2 class="h2">${dayTitle(g.date)}${many ? html` · <span class="label">${athleteName(g.athlete)}</span>` : ''}</h2>
       ${allinDays.has(g.key) ? html`<span class="chip chip-allin" title="Каждый подход — до цели и с видео">🎲 ${ALLIN}</span>` : ''}
-      ${bets.has(g.key) ? html`<span class="chip chip-pari">🔥 ${PARI}</span>` : ''}
       ${g.logs.length > 1 ? html`<button type="button" class="ghost" data-accept-day="${g.key}">Принять всё за день</button>` : ''}
     </div>
     ${g.logs.map((l) => html`<section class="card review-card" data-id="${l.id}" data-group="${g.key}" data-unit="${exUnit(l.exercise_id)}">
       <h2 class="h2">${exName(l.exercise_id)} · подход ${l.set_no}</h2>
-      ${bets.get(g.key)?.exercise_id === l.exercise_id ? html`<p class="pari-note">🔥 Ставка «${PARI}»: ${pariTimes(bets.get(g.key).reps, exUnit(l.exercise_id))}
-        за подход. Примешь столько или больше — друг получит приз ${bets.get(g.key).prize}.</p>` : ''}
       <p class="label">Заявлено: <b class="em">${amount(l.claimed, exUnit(l.exercise_id))}</b> · видео ${l.video_url
         ? html`<a href="${l.video_url}" target="_blank" rel="noopener">▶ смотреть</a>` : l.has_video ? 'есть' : html`<span class="bad">нет</span>`}<br>
         Подпись в Telegram: ${l.no ? `#${l.no}` : caption(l.date, exName(l.exercise_id), l.set_no)}</p>
@@ -148,6 +151,18 @@ export async function render(el, ctx, args, alive) {
       ${morning?.muscles === 'pain' ? html`<p class="label bad">Друг отметил «плохо». Если друг попросит больничный, запрос появится здесь.</p>` : ''}
     </section>
   `);
+
+  el.querySelectorAll('.pari-video').forEach((card) => {
+    card.querySelectorAll('[data-pari-ok]').forEach((b) => b.addEventListener('click', async () => {
+      const ok = b.dataset.pariOk === '1';
+      try {
+        const st = await api.pariReview(Number(card.dataset.pari), Number(card.dataset.n), ok);
+        card.querySelector('.seg').outerHTML = String(html`<p class="saved ${ok ? 'accepted' : 'rejected'}">
+          ${ok ? `Засчитано: друг получил ${st.prize}` : 'Не засчитано: приза нет. Сегодня друг может прислать новое видео.'}</p>`);
+        ctx.badge?.();
+      } catch (e) { ctx.toast(e.message); }
+    }));
+  });
 
   el.querySelectorAll('.sick-card').forEach((card) => {
     card.querySelectorAll('[data-approve]').forEach((b) => b.addEventListener('click', async () => {

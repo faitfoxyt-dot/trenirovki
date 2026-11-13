@@ -3,13 +3,14 @@
 
 import { html, raw, dayTitle, addDays, shortDate, debounce } from '../util.js';
 import { MUSCLES, DAY_STATUS, caption, goalText, reviewNote, dayMode, isCalibration, unitOf, unitText,
-  ALLIN, ALLIN_STATE, PARI, PARI_STATE, pariTimes, signed, swapItems, pickLocked, videoCaption, plural, amount } from '../logic.js';
+  ALLIN, ALLIN_STATE, PARI, PARI_STATE, pariTimes, pariCaption, signed, swapItems, pickLocked, videoCaption, plural, amount } from '../logic.js';
 import { openGuide } from './guide.js';
 import { guideFor } from '../guide-data.js';
 import { poseSVG, svg, fitBox, underlay } from '../figure.js';
 import { rouletteCard, rouletteChip, rouletteLocked, wireRoulette } from './roulette.js';
 
 const BANNER_KEY = 'video-banner-1'; // «Понятно» на плашке про видео — помним в браузере
+const PARI_NEWS_KEY = 'pari-news-1'; // новость «Пари — отдельным видео» на весь экран — показываем один раз
 
 export async function render(el, ctx, args, alive) {
   const { api, clock, settings, me } = ctx;
@@ -77,7 +78,7 @@ export async function render(el, ctx, args, alive) {
         ${wallet && !beforeStart ? streakChip(wallet, ctx.rules?.current, roulette?.spin && roulette.spin.gun !== 'offer' && roulette.spin.key !== 'skip') : ''}
         ${beforeStart ? html`<span class="chip chip-warn">Старт ${shortDate(settings.start_date)}</span>` : ''}
         ${allin && status === 'training' ? html`<span class="chip chip-allin">🎲 ALL IN</span>` : ''}
-        ${pari && status === 'training' ? html`<span class="chip chip-pari">🔥 ${PARI}</span>` : ''}
+        ${pari ? html`<span class="chip chip-pari">🔥 ${PARI}</span>` : ''}
         ${event?.score > 0 ? html`<span class="chip chip-event">⭐ Событие · очки ×${(1 + event.score / 10).toFixed(1)}</span>` : ''}
         ${status === 'training' ? rouletteChip(roulette) : ''}
       </div>
@@ -90,7 +91,7 @@ export async function render(el, ctx, args, alive) {
     ${video.on && !isAdmin && isToday && status === 'training' && !beforeStart ? videoBanner(seenBanner(), day.plan) : ''}
 
     ${allin && status === 'training' && !beforeStart ? allinCard(allin, isToday) : ''}
-    ${pari && status === 'training' && !beforeStart ? pariCard(pari, isToday) : ''}
+    ${pari && !beforeStart ? pariCard(pari, isToday, isAdmin) : ''}
 
     ${!isAdmin && isToday && clock.grace ? html`<a class="notice" href="#/day/${yesterday}">
       Вчерашний день закрыт. До 03:00 можно отметить видео за вчера →</a>` : ''}
@@ -127,6 +128,13 @@ export async function render(el, ctx, args, alive) {
 
   const morningEl = el.querySelector('#morning');
   if (morningEl) renderMorning(morningEl, ctx, state, !isAdmin && isToday);
+
+  if (!isAdmin && isToday && !seenPariNews() && !document.querySelector('.pari-news')) pariNews();
+  el.querySelector('[data-pari-cap]')?.addEventListener('click', async (e) => {
+    const text = e.currentTarget.dataset.pariCap;
+    const ok = await copy(text);
+    el.querySelector('.pari-copy-note').textContent = ok ? `Скопировано: ${text}` : 'Не получилось скопировать — перепиши подпись вручную';
+  });
 
   el.querySelector('[data-news]')?.addEventListener('click', (e) => {
     try { localStorage.setItem(BANNER_KEY, e.currentTarget.dataset.news === 'ok' ? '1' : '0'); } catch { /* без памяти — покажем снова */ }
@@ -252,19 +260,65 @@ function allinCard(a, isToday) {
   </section>`;
 }
 
-// «За гранью предела»: ставка на сегодня — упражнение и сколько раз за один подход.
-function pariCard(p, isToday) {
+// «За гранью предела»: ставка на сегодня — отдельный подход, не из плана. Видео с подписью «#пари …»
+// в тему «Видео», приз начисляет генерал, когда посмотрит.
+function pariCard(p, isToday, isAdmin) {
   const state = PARI_STATE[p.state];
   const times = (n) => pariTimes(n, unitOf(p));
+  const cap = pariCaption(p);
   const prize = p.test ? `приз ${p.prize} (в тестовый период очков нет)` : `приз ${p.prize}`;
+  const canSend = isToday && !isAdmin && (p.state === 'wait' || p.state === 'lost');
   return html`<section class="card beyond-card">
     <div class="row"><h2 class="h2">🔥 ${PARI}</h2><span class="chip">${state.icon} ${state.text}</span></div>
     <p>${isToday ? 'Сегодня спор с генералом' : 'Спор с генералом'}: <b>${p.name}</b> — ${times(p.reps)} за один подход.</p>
-    ${p.state === 'won' ? html`<p class="ok strong">Сделано: ${times(p.best)}! ${p.test ? prize : `+${p.prize} очков`}</p>`
-      : p.state === 'lost' ? html`<p class="warn-strong">Не вышло${p.best ? ` (лучший подход — ${times(p.best)})` : ''}. Обычные очки за день остаются.</p>`
-      : p.state === 'check' ? html`<p class="strong">Генерал смотрит твой подход. Если всё честно — ${prize}.</p>`
-      : html`<p class="strong">Сделаешь хотя бы в одном подходе — ${prize}. Сними этот подход на видео.</p>`}
+    ${p.state === 'won' ? html`<p class="ok strong">Генерал засчитал! ${p.test ? prize : `+${p.prize} очков`}</p>`
+      : p.state === 'check' ? html`<p class="strong">Видео у генерала. Если всё честно — ${prize}.</p>`
+      : p.state === 'lost' ? html`<p class="warn-strong">${p.review === 'rejected' ? 'Генерал не засчитал' : 'Видео не пришло'} — приза нет.
+          ${isToday ? 'Можешь прислать новое видео до конца дня.' : 'Обычные очки за день остаются.'}</p>`
+      : ''}
+    ${canSend || (isAdmin && p.state === 'wait') ? html`<p class="label">Это отдельный подход, не из плана — сделай его когда удобно.</p>
+      <ol class="news-steps">
+        <li><span class="news-n">1</span><span>Сними один подход на видео: ${times(p.reps)} или больше.</span></li>
+        <li><span class="news-n">2</span><span>Отправь в группу, в тему «Видео», с подписью:</span></li>
+      </ol>
+      <div class="pari-cap"><span class="news-cap">${cap}</span>
+        ${isAdmin ? '' : html`<button type="button" class="ghost pari-copy" data-pari-cap="${cap}">📋 Скопировать</button>`}</div>
+      <p class="label pari-copy-note" role="status"></p>
+      <p class="label">Генерал посмотрит видео и начислит ${prize}.</p>` : ''}
   </section>`;
+}
+
+// Новость на весь экран, один раз: подход на пари — отдельным видео.
+function seenPariNews() {
+  try { return localStorage.getItem(PARI_NEWS_KEY) === '1'; } catch { return false; }
+}
+function pariNews(onClose) {
+  const layer = document.createElement('div');
+  layer.className = 'gd-overlay pari-news';
+  layer.innerHTML = String(html`<div class="gd-sheet pari-news-sheet" role="dialog" aria-modal="true" aria-label="Новое от генерала">
+    <div class="row"><span class="news-tag">📢 Новое от генерала</span>
+      <button type="button" class="ghost icon gd-close" data-close aria-label="Закрыть">✕</button></div>
+    <div class="pari-news-hero" aria-hidden="true">🔥</div>
+    <h2 class="gd-title">Пари — теперь отдельным видео</h2>
+    <p>Подход на ставку «${PARI}» больше не нужно искать в плане дня.</p>
+    <ol class="news-steps">
+      <li><span class="news-n">1</span><span>В день пари на «Сегодня» есть карточка 🔥 с упражнением и сколько нужно сделать.</span></li>
+      <li><span class="news-n">2</span><span>Сделай этот подход отдельно, когда удобно, и сними на видео.</span></li>
+      <li><span class="news-n">3</span><span>Отправь видео в тему «Видео» с подписью из карточки — кнопка 📋 её копирует,
+        например <span class="news-cap">#пари Удержание рюкзака в руках</span></span></li>
+      <li><span class="news-n">4</span><span>Генерал посмотрит и начислит приз. Обычные подходы дня — как раньше.</span></li>
+    </ol>
+    <button type="button" class="btn" data-close>Понятно</button>
+  </div>`);
+  document.body.append(layer);
+  document.body.classList.add('gd-lock');
+  const close = () => {
+    try { localStorage.setItem(PARI_NEWS_KEY, '1'); } catch { /* без памяти — покажем снова */ }
+    layer.remove();
+    document.body.classList.remove('gd-lock');
+    onClose?.();
+  };
+  layer.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', close));
 }
 
 // Плашка «Новое от генерала»: видео с номером подхода подтверждает подход само.
