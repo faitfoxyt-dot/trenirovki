@@ -1102,3 +1102,27 @@ body.gd-lock { overflow: hidden; }
   .rl-lit, .rl-won .rl-lit, .rl-wheel-mini .rl-rot, .rl-go::after, .rl-ring, .rl-hit-dim, .rl-bloom::before, .rl-banner, .rl-banner-bad,
   .rl-banner-ok, .rl-result, .rl-shake, .rl-flash, .rl-hub-won, .rl-drum-bang, .rl-rolling { animation: none; }
 }
+/* Пари — отдельным видео: подпись с копированием, новость на весь экран, точка на «Проверке» */
+.pari-cap { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.pari-cap .news-cap { margin: 0; border-color: var(--bad); color: var(--bad); font-size: 15px; padding: 6px 10px; }
+.pari-copy { flex: none; }
+.pari-copy-note:empty { display: none; }
+.beyond-card .news-n { background: var(--bad); }
+.pari-news { align-items: stretch; z-index: 60; }
+.pari-news-sheet {
+  height: 100dvh; max-width: 520px; border-radius: 0; border: 0; justify-content: flex-start; padding-top: calc(72px + env(safe-area-inset-top));
+  background: radial-gradient(110% 50% at 50% 0%, rgba(255, 138, 61, .22), transparent 65%), var(--surface);
+}
+.pari-news-sheet .row { position: absolute; top: calc(16px + env(safe-area-inset-top)); left: 16px; right: 16px; max-width: 488px; margin: 0 auto; }
+.pari-news-sheet p { margin: 0; }
+.pari-news-sheet .news-tag { color: var(--bad); }
+.pari-news-sheet .news-n { background: var(--bad); }
+.pari-news-sheet .news-cap { border-color: var(--bad); color: var(--bad); }
+.pari-news-hero { font-size: 56px; line-height: 1; }
+.pari-video .vid-link { align-self: flex-start; }
+.tab { position: relative; }
+.tab-dot {
+  position: absolute; top: 4px; left: calc(50% + 6px); min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+  background: var(--bad); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
+}
+.pari-news-late { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 14px; border: 1px solid var(--bad); background: rgba(255, 138, 61, .10); }

@@ -67,7 +67,9 @@ const db = {
   ideas: [],
   theory: [],
   body: [],
-  pari: [], // «За гранью предела»: {id, athlete_id, start, price, status, bets: [{n, exercise_id, name, unit, reps, base, pct, prize}]}
+  // «За гранью предела»: {id, athlete_id, start, price, status, bets: [{n, exercise_id, name, unit, reps, base, pct, prize,
+  //   video_url, video_at, review: null | 'pending' | 'accepted' | 'rejected', reviewed_at}]}
+  pari: [],
   events: [], // события дня: {athlete_id, date, title, game, score} — score null, пока не сыграл
   videos: [], // видео из Telegram, к которым ещё нет повторов: {athlete_id, date, no, url}
   spins: [], // «Русская рулетка»: {athlete_id, date, chain, key, add, gun, spun_at, decided_at}
@@ -449,12 +451,6 @@ function review(l, decision, confirmed, comment) {
 
 // Видео с номером подхода пришло, и повторы уже вписаны — бот принимает подход сам.
 function videoAccept(l, url) {
-  const b = pariBetAt(l.athlete_id, l.date);
-  if (b && b.exercise_id === l.exercise_id && l.claimed >= b.reps) {
-    // Подход на ставку «За гранью предела» смотрит генерал — бот только прикрепляет видео.
-    Object.assign(l, { has_video: true, video_url: url });
-    return;
-  }
   Object.assign(l, { has_video: true, video_url: url, auto: true });
   review(l, 'accepted');
 }
@@ -564,17 +560,35 @@ function pariBetAt(a, date) {
   }
   return null;
 }
+// Ставка решается по отдельному видео «#пари …»: генерал засчитал — won, видео ждёт — check,
+// не засчитал или день прошёл без видео — lost (в тот же день можно прислать новое видео).
 function pariState(a, date) {
   const b = pariBetAt(a, date);
   if (!b) return null;
-  const logs = db.logs.filter((l) => l.athlete_id === a && l.date === date && l.exercise_id === b.exercise_id);
-  const ok = logs.filter((l) => l.review === 'accepted' || l.review === 'corrected').map((l) => l.confirmed ?? l.claimed ?? 0);
-  const best = ok.length ? Math.max(...ok) : null;
   let state = 'wait';
-  if ((best ?? 0) >= b.reps) state = 'won';
-  else if (logs.some((l) => l.review === 'pending' && l.claimed >= b.reps)) state = 'check';
-  else if (date < today()) state = 'lost';
-  return { ...b, date, best, state, points: b.prize, test: isTestDay(date) };
+  if (b.review === 'accepted') state = 'won';
+  else if (b.review === 'pending') state = 'check';
+  else if (b.review === 'rejected' || date < today()) state = 'lost';
+  return { ...b, date, state, points: b.prize, test: isTestDay(date) };
+}
+// Видео «#пари» от бота — как pari_video в базе: ставка этого дня или двух прошлых,
+// при нескольких — та, чьё название есть в подписи.
+function pariVideo(a, date, url, caption = '') {
+  const cap = caption.toLowerCase();
+  let pick = null;
+  [0, 1, 2].map((k) => pariBetAt(a, addDays(date, -k))).filter((b) => b && b.review !== 'accepted').forEach((b) => {
+    if (!pick || (cap.includes(b.name.toLowerCase()) && !cap.includes(pick.name.toLowerCase()))) pick = b;
+  });
+  if (!pick) return false;
+  Object.assign(db.pari.find((p) => p.id === pick.pari_id).bets[pick.n - 1], { video_url: url, video_at: stamp(), review: 'pending', reviewed_at: null });
+  return true;
+}
+function pariPending() {
+  return db.pari.filter((p) => p.status === 'active').flatMap((p) => {
+    const days = pariDays(p.athlete_id, p.start);
+    return p.bets.filter((b) => b.review === 'pending').map((b) => ({ pari_id: p.id, n: b.n, athlete_id: p.athlete_id, date: days[b.n - 1],
+      name: b.name, unit: b.unit, reps: b.reps, pct: b.pct, prize: b.prize, video_url: b.video_url, video_at: b.video_at }));
+  }).sort((x, y) => (x.video_at ?? '').localeCompare(y.video_at ?? ''));
 }
 function pariApply(a, date) {
   if (isTestDay(date)) return;
@@ -585,7 +599,7 @@ function pariApply(a, date) {
   if (!delta) return;
   addLedger({ athlete_id: a, date, kind: 'pari', amount: Math.max(delta, -balance(a)), rating: delta,
     note: want === 0 ? 'За гранью предела: приз снят'
-      : `${have ? 'Пересмотр: ' : ''}За гранью предела: ${s.name} ${s.best} при ставке ${s.reps} (+${s.pct}%)` });
+      : `${have ? 'Пересмотр: ' : ''}За гранью предела: ${s.name} по видео, ставка ${s.reps} (+${s.pct}%)` });
 }
 function pariPlan(a, start) {
   const r = rulesFor(today());
@@ -1224,6 +1238,19 @@ export const api = {
     return clone(pariList(a, from));
   },
 
+  async pariPending() {
+    needAdmin();
+    return clone(pariPending());
+  },
+  async pariReview(pariId, n, ok) {
+    needAdmin();
+    const p = db.pari.find((x) => x.id === pariId && x.status === 'active');
+    const b = p?.bets[n - 1];
+    if (!b?.video_url) fail('Видео по этой ставке нет');
+    Object.assign(b, { review: ok ? 'accepted' : 'rejected', reviewed_at: stamp() });
+    pariApply(p.athlete_id, pariDays(p.athlete_id, p.start)[n - 1]);
+    return clone(pariState(p.athlete_id, pariDays(p.athlete_id, p.start)[n - 1]));
+  },
   async pariDay(date, athleteId) {
     const a = athleteId ?? current.id;
     if (a !== current.id) needAdmin();

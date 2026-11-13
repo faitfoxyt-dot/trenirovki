@@ -50,7 +50,16 @@ const FRIEND_ROUTES = ['today', 'day', 'calendar', 'body', 'goal', 'shop'];
 const VIEWS = { today, day: today, calendar, body, goal, shop, review, plan, rules };
 
 const root = document.getElementById('app');
-const ctx = { api, demo: DEMO, toast, refresh: () => route(), signOut };
+const ctx = { api, demo: DEMO, toast, refresh: () => route(), signOut, badge: () => pariBadge() };
+
+// Генералу: красная точка на «Проверке», пока видео на пари ждёт решения.
+async function pariBadge() {
+  const tab = root.querySelector('.tab[data-route="review"]');
+  if (!tab || !api.pariPending) return;
+  const n = (await api.pariPending().catch(() => [])).length;
+  tab.querySelector('.tab-dot')?.remove();
+  if (n) tab.insertAdjacentHTML('beforeend', `<span class="tab-dot" aria-label="Видео на пари: ${n}">${n}</span>`);
+}
 
 function toast(message) {
   let t = document.querySelector('.toast');
@@ -150,6 +159,7 @@ async function route() {
     if (my !== routeSeq) return;
     await view.render(el, ctx, args, () => my === routeSeq);
     if (my === routeSeq) mountStar(ctx).catch(() => {});
+    if (my === routeSeq && ctx.me.role === 'admin') pariBadge();
   } catch (err) {
     if (my !== routeSeq) return;
     el.innerHTML = String(html`<section class="card"><h2 class="h2">Не получилось загрузить</h2>
