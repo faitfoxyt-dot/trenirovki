@@ -1442,7 +1442,8 @@ export const api = {
     if (current.role === 'admin') fail('Вес записывает сам атлет');
     if (weight === null || weight < 25 || weight > 300) fail('Вес — от 25 до 300 кг');
     if (fat !== null && (fat < 2 || fat > 70)) fail('Жир — от 2 до 70 %');
-    const date = clock().today;
+    const c = clock();
+    const date = c.grace ? addDays(c.today, -1) : c.today; // до 03:00 — за вчера, как body_day() в базе
     let b = db.body.find((x) => x.athlete_id === current.id && x.date === date);
     if (!b) { b = { athlete_id: current.id, date }; db.body.push(b); }
     b.weight = Math.round(weight * 10) / 10;

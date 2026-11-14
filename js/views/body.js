@@ -1,5 +1,5 @@
 // «Тело»: финальное взвешивание дня (вес и % жира), скан с рангом, графики и дисциплина.
-// Друг пишет только за сегодня, это же уходит в итог дня в боте. Админ смотрит и может удалить запись.
+// Друг пишет только за сегодня (до 03:00 — за вчера), это же уходит в итог дня в боте. Админ смотрит и может удалить запись.
 
 import { html, raw, dayTitle, shortDate, addDays } from '../util.js';
 import { confetti } from './goal.js';
@@ -42,8 +42,10 @@ export async function render(el, ctx, args, alive) {
   if (!alive()) return;
 
   const today = clock.today;
+  // До 03:00 вес пишется во вчерашний день (как save_body в базе).
+  const day = clock.grace ? addDays(today, -1) : today;
   const last = rows[rows.length - 1] ?? null;
-  const todayRow = last?.date === today ? last : null;
+  const todayRow = rows.find((b) => b.date === day) ?? null;
   const hasFat = rows.some((b) => b.fat !== null);
   if (!hasFat && view.metric !== 'weight') view.metric = 'weight';
 
@@ -77,7 +79,7 @@ export async function render(el, ctx, args, alive) {
   countUp(el.querySelector('[data-count]'));
 
   const entry = el.querySelector('#entry');
-  if (entry) renderEntry(entry, ctx, todayRow, last, rows.filter((b) => b.date !== today));
+  if (entry) renderEntry(entry, ctx, todayRow, last, rows.filter((b) => b.date < day), day !== today);
 
   const chartCard = el.querySelector('#chart-card');
   if (chartCard) renderChart(chartCard, rows, hasFat, today);
@@ -110,14 +112,16 @@ function countUp(node) {
 
 // ── Запись за сегодня ──
 
-function renderEntry(el, ctx, todayRow, last, before) {
+function renderEntry(el, ctx, todayRow, last, before, late) {
+  const again = () => renderEntry(el, ctx, todayRow, last, before, late);
   if (todayRow && !view.editing) {
-    el.innerHTML = String(html`<div class="row"><h2 class="h2">Сегодня записано</h2><span class="chip chip-on">✓ в итоге дня</span></div>
+    el.innerHTML = String(html`<div class="row"><h2 class="h2">${late ? 'За вчера записано' : 'Сегодня записано'}</h2><span class="chip chip-on">✓ в итоге дня</span></div>
       <p class="body-today"><b>${num(todayRow.weight)} кг</b>${todayRow.fat !== null ? html` · <b>${num(todayRow.fat)}%</b> жира` : ''}</p>
+      ${late ? html`<p class="label">До 03:00 вес идёт во вчерашний день. Поправить можно до 03:00.</p>` : ''}
       <div class="row-gap"><button type="button" class="ghost" id="body-edit">Изменить</button>
-        <button type="button" class="ghost" id="body-clear">Удалить</button></div>`);
-    el.querySelector('#body-edit').addEventListener('click', () => { view.editing = true; renderEntry(el, ctx, todayRow, last, before); });
-    el.querySelector('#body-clear').addEventListener('click', async () => {
+        ${late ? '' : html`<button type="button" class="ghost" id="body-clear">Удалить</button>`}</div>`);
+    el.querySelector('#body-edit').addEventListener('click', () => { view.editing = true; again(); });
+    el.querySelector('#body-clear')?.addEventListener('click', async () => {
       if (!confirm('Удалить сегодняшнее взвешивание?')) return;
       try {
         await ctx.api.deleteBody(ctx.athleteId, todayRow.date);
@@ -129,14 +133,15 @@ function renderEntry(el, ctx, todayRow, last, before) {
   }
   const base = todayRow ?? last;
   el.innerHTML = String(html`
-    <div class="row"><h2 class="h2">Взвешивание за сегодня</h2></div>
-    <p class="label">Запиши до 00:00 — цифры попадут в итог дня. Лучше взвешиваться в одно и то же время.</p>
+    <div class="row"><h2 class="h2">${late ? 'Взвешивание за вчера' : 'Взвешивание за сегодня'}</h2></div>
+    <p class="label">${late ? 'Сейчас до 03:00 — вес запишется во вчерашний день и придёт в его итог.'
+      : 'Запиши до 00:00 — цифры попадут в итог дня. После полуночи и до 03:00 вес ещё идёт во вчерашний день.'}</p>
     <div class="grid-2">
       ${stepper('weight', 'Вес, кг', base?.weight ?? '', 'например 72,4')}
       ${stepper('fat', 'Жир, %', base?.fat ?? '', 'например 15,0')}
     </div>
     <p class="error" id="body-error" role="alert"></p>
-    <button type="button" class="btn" id="body-save">Записать в итог дня</button>
+    <button type="button" class="btn" id="body-save">${late ? 'Записать за вчера' : 'Записать в итог дня'}</button>
     ${todayRow ? html`<button type="button" class="ghost" id="body-cancel">Отмена</button>` : ''}`);
 
   el.querySelectorAll('[data-step]').forEach((b) => b.addEventListener('click', () => {
@@ -146,7 +151,7 @@ function renderEntry(el, ctx, todayRow, last, before) {
     input.value = num(Math.max(0, startAt + Number(b.dataset.step)));
     input.dispatchEvent(new Event('input'));
   }));
-  el.querySelector('#body-cancel')?.addEventListener('click', () => { view.editing = false; renderEntry(el, ctx, todayRow, last, before); });
+  el.querySelector('#body-cancel')?.addEventListener('click', () => { view.editing = false; again(); });
   el.querySelector('#body-save').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     const err = el.querySelector('#body-error');
@@ -162,7 +167,7 @@ function renderEntry(el, ctx, todayRow, last, before) {
       view.editing = false;
       const news = record(before, { weight, fat });
       if (news) confetti();
-      ctx.toast(news ?? 'Записано в итог дня 💪');
+      ctx.toast(news ?? (late ? 'Записано во вчерашний итог 💪' : 'Записано в итог дня 💪'));
       setTimeout(() => ctx.refresh(), news ? 1200 : 0);
     } catch (x) { err.textContent = x.message; btn.disabled = false; }
   });
