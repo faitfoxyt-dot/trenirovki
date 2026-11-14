@@ -113,7 +113,7 @@ export async function render(el, ctx, args, alive) {
           <p class="label">${restText(status, beforeStart)}</p>
         </section>`}
 
-    ${!isAdmin && isToday && !weighed.length ? html`<a class="notice body-nudge" href="#/body">
+    ${!isAdmin && isToday && !clock.grace && !weighed.length ? html`<a class="notice body-nudge" href="#/body">
       <span aria-hidden="true">⚖️</span><span><b>Финальное взвешивание</b><br>Вес и % жира — в итог дня. Вкладка «Тело» →</span></a>` : ''}
 
     ${status === 'training' && !isAdmin && isToday ? html`<p class="label center">Каждый подход сохраняется сразу.<br>
