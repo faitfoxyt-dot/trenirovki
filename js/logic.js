@@ -197,10 +197,13 @@ export const ALLIN_STATE = {
 export const PARI = 'За гранью предела';
 // «38 раз», «22 раза» или «1 мин 30 с».
 export const pariTimes = (n, unit) => (isSec(unit) ? amount(n, unit) : `${n} ${plural(n, 'раз', 'раза', 'раз')}`);
+// Подход на ставку — отдельный, не из плана: видео в тему «Видео» с этой подписью («#пари …» бот тоже понимает).
+// Приз начисляется сразу, генерал может оспорить.
+export const pariCaption = (p) => `Спор с генералом ${p.name}`;
 export const PARI_STATE = {
   wait: { icon: '⏳', text: 'впереди' },
-  check: { icon: '👀', text: 'у генерала' },
-  won: { icon: '🏆', text: 'выиграно' },
+  check: { icon: '🔥', text: 'приз начислен' },
+  won: { icon: '🏆', text: 'генерал принял' },
   lost: { icon: '❌', text: 'не вышло' },
   cancelled: { icon: '↩️', text: 'отменено' },
 };

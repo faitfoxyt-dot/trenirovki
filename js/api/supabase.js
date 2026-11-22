@@ -239,6 +239,13 @@ export const api = {
     const { data, error } = await sb.rpc('pari_list', { p_from: from, p_athlete: athleteId ?? null });
     return error ? [] : data;
   },
+  async pariPending() {
+    const { data, error } = await sb.rpc('pari_pending');
+    return error ? [] : data ?? [];
+  },
+  async pariReview(pariId, n, ok) {
+    return check(await sb.rpc('pari_review', { p_pari: pariId, p_n: n, p_ok: ok }));
+  },
   async pariDay(date, athleteId) {
     const { data, error } = await sb.rpc('pari_day', { p_date: date, p_athlete: athleteId ?? null });
     return error ? null : data;
