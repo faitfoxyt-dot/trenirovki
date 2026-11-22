@@ -82,14 +82,15 @@ export async function render(el, ctx, args, alive) {
     </header>
     ${pariVideos.map((v) => html`<section class="card beyond-card pari-video" data-pari="${v.pari_id}" data-n="${v.n}">
       <div class="row"><span class="chip chip-pari">🔥 ${PARI}</span><span class="label">${dayTitle(v.date)}${many ? ` · ${athleteName(v.athlete_id)}` : ''}</span></div>
-      <h2 class="h2">Видео на пари пришло</h2>
+      <h2 class="h2">Спор с генералом: видео пришло</h2>
       <p>Ставка: <b>${v.name}</b> — ${pariTimes(v.reps, v.unit)} за один подход (+${v.pct}%).<br>
         <span class="label">Подпись в Telegram: ${pariCaption(v)}</span></p>
       ${v.video_url ? html`<a class="ghost link vid-link" href="${v.video_url}" target="_blank" rel="noopener">▶ Смотреть видео</a>` : ''}
-      <p class="label">Сделал ${pariTimes(v.reps, v.unit)} или больше — засчитай, друг получит ${v.prize}.</p>
+      <p class="ok strong">Другу уже начислено <b>+${v.prize}</b>.</p>
+      <p class="label">Всё честно — «Принять», ничего не меняется. Не сделал ${pariTimes(v.reps, v.unit)} — «Оспорить», и ${v.prize} снимутся.</p>
       <div class="seg">
-        <button type="button" class="pill" data-pari-ok="1">Засчитать +${v.prize}</button>
-        <button type="button" class="pill" data-pari-ok="0">Не засчитывать</button>
+        <button type="button" class="pill" data-pari-ok="1">✅ Принять</button>
+        <button type="button" class="pill pill-bad" data-pari-ok="0">⚔️ Оспорить −${v.prize}</button>
       </div>
     </section>`)}
     ${sick.map((s) => html`<section class="card sick-card" data-sick="${s.id}">
@@ -158,7 +159,7 @@ export async function render(el, ctx, args, alive) {
       try {
         const st = await api.pariReview(Number(card.dataset.pari), Number(card.dataset.n), ok);
         card.querySelector('.seg').outerHTML = String(html`<p class="saved ${ok ? 'accepted' : 'rejected'}">
-          ${ok ? `Засчитано: друг получил ${st.prize}` : 'Не засчитано: приза нет. Сегодня друг может прислать новое видео.'}</p>`);
+          ${ok ? `Принято: ${st.prize} остаются у друга` : `Оспорено: −${st.prize}. Друг может прислать новое видео (2 дня).`}</p>`);
         ctx.badge?.();
       } catch (e) { ctx.toast(e.message); }
     }));

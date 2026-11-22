@@ -144,6 +144,7 @@ input[type=date].input { display: block; padding-top: 10px; padding-bottom: 10px
 .pill-on { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 600; }
 .pill:disabled:not(.pill-on) { color: var(--dim); cursor: default; }
 .pill-on:disabled { opacity: 1; }
+.pill-bad { color: var(--bad); border-color: var(--bad); }
 
 .check { display: flex; align-items: center; gap: 6px; min-height: 44px; font-size: 13px; cursor: pointer; flex: none; }
 .check input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); }

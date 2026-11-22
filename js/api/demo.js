@@ -560,8 +560,8 @@ function pariBetAt(a, date) {
   }
   return null;
 }
-// Ставка решается по отдельному видео «#пари …»: генерал засчитал — won, видео ждёт — check,
-// не засчитал или день прошёл без видео — lost (в тот же день можно прислать новое видео).
+// Ставка решается по отдельному видео «Спор с генералом» / «#пари …»: генерал принял — won,
+// видео пришло (приз уже начислен) — check, оспорено или день прошёл без видео — lost.
 function pariState(a, date) {
   const b = pariBetAt(a, date);
   if (!b) return null;
@@ -571,8 +571,8 @@ function pariState(a, date) {
   else if (b.review === 'rejected' || date < today()) state = 'lost';
   return { ...b, date, state, points: b.prize, test: isTestDay(date) };
 }
-// Видео «#пари» от бота — как pari_video в базе: ставка этого дня или двух прошлых,
-// при нескольких — та, чьё название есть в подписи.
+// Видео на спор от бота — как pari_take в базе: ставка этого дня или двух прошлых,
+// при нескольких — та, чьё название есть в подписи, иначе ближайшая. Приз — сразу.
 function pariVideo(a, date, url, caption = '') {
   const cap = caption.toLowerCase();
   let pick = null;
@@ -581,6 +581,8 @@ function pariVideo(a, date, url, caption = '') {
   });
   if (!pick) return false;
   Object.assign(db.pari.find((p) => p.id === pick.pari_id).bets[pick.n - 1], { video_url: url, video_at: stamp(), review: 'pending', reviewed_at: null });
+  const p = db.pari.find((x) => x.id === pick.pari_id);
+  pariApply(a, pariDays(a, p.start)[pick.n - 1]);
   return true;
 }
 function pariPending() {
@@ -593,13 +595,13 @@ function pariPending() {
 function pariApply(a, date) {
   if (isTestDay(date)) return;
   const s = pariState(a, date);
-  const want = s?.state === 'won' ? s.points : 0;
+  const want = s?.state === 'won' || s?.state === 'check' ? s.points : 0;
   const have = db.ledger.filter((x) => x.athlete_id === a && x.date === date && x.kind === 'pari').reduce((n, x) => n + x.rating, 0);
   const delta = want - have;
   if (!delta) return;
   addLedger({ athlete_id: a, date, kind: 'pari', amount: Math.max(delta, -balance(a)), rating: delta,
-    note: want === 0 ? 'За гранью предела: приз снят'
-      : `${have ? 'Пересмотр: ' : ''}За гранью предела: ${s.name} по видео, ставка ${s.reps} (+${s.pct}%)` });
+    note: want === 0 ? (s?.review === 'rejected' ? 'Спор с генералом: генерал оспорил видео, приз снят' : 'Спор с генералом: приз снят')
+      : `${have ? 'Пересмотр: ' : ''}Спор с генералом: ${s.name} по видео, ставка ${s.reps} (+${s.pct}%)` });
 }
 function pariPlan(a, start) {
   const r = rulesFor(today());
@@ -823,6 +825,21 @@ const inRange = (rows, a, from, to) =>
 
 const needAdmin = () => { if (current.role !== 'admin') fail('Только для админа'); };
 const needAthlete = () => { if (current.role !== 'athlete') fail('Это делает атлет'); };
+
+// Только для скринов в демо: пари у друга без проверки серии и видео «от бота».
+export const demoTools = {
+  pari(start, bets) {
+    const r = rulesFor(today());
+    const days = pariDays(ATHLETE.id, start);
+    const rows = days.map((d, i) => {
+      const o = pariOptions(ATHLETE.id, d).find((y) => y.id === bets[i]) ?? pariOptions(ATHLETE.id, d)[0];
+      const base = pariBase(ATHLETE.id, o);
+      return { n: i + 1, exercise_id: o.id, name: o.name, unit: o.unit, reps: pariReps(base, 50), base, pct: 50, prize: pariPrize(r, 50) };
+    });
+    db.pari.push({ id: seq++, athlete_id: ATHLETE.id, start, price: r?.pari_price ?? 5000, status: 'active', bets: rows, created_at: stamp() });
+  },
+  video(date, caption) { return pariVideo(ATHLETE.id, date, 'https://t.me/c/0/1', caption); },
+};
 
 export const api = {
   demo: true,

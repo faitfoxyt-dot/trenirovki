@@ -10,7 +10,7 @@ import { poseSVG, svg, fitBox, underlay } from '../figure.js';
 import { rouletteCard, rouletteChip, rouletteLocked, wireRoulette } from './roulette.js';
 
 const BANNER_KEY = 'video-banner-1'; // «Понятно» на плашке про видео — помним в браузере
-const PARI_NEWS_KEY = 'pari-news-1'; // новость «Пари — отдельным видео» на весь экран — показываем один раз
+const PARI_NEWS_KEY = 'pari-news-2'; // новость «Спор с генералом — приз сразу» на весь экран — показываем один раз
 
 export async function render(el, ctx, args, alive) {
   const { api, clock, settings, me } = ctx;
@@ -277,9 +277,10 @@ function pariCard(p, isToday, isAdmin, late = false) {
     <div class="row"><h2 class="h2">🔥 ${PARI}</h2><span class="chip">${state.icon} ${state.text}</span></div>
     <p>${late ? `Пари за ${dayTitle(p.date)}` : isToday ? 'Сегодня спор с генералом' : 'Спор с генералом'}: <b>${p.name}</b> — ${times(p.reps)} за один подход.</p>
     ${late ? html`<p class="strong">Сделал, но не скинул видео? Ещё не поздно — пришли его до конца ${dayTitle(addDays(p.date, 2))}.</p>`
-      : p.state === 'won' ? html`<p class="ok strong">Генерал засчитал! ${p.test ? prize : `+${p.prize} очков`}</p>`
-      : p.state === 'check' ? html`<p class="strong">Видео у генерала. Если всё честно — ${prize}.</p>`
-      : p.state === 'lost' ? html`<p class="warn-strong">${p.review === 'rejected' ? 'Генерал не засчитал' : 'Видео не пришло'} — приза нет.
+      : p.state === 'won' ? html`<p class="ok strong">Генерал принял! ${p.test ? prize : `+${p.prize} очков твои`}</p>`
+      : p.state === 'check' ? html`<p class="ok strong">${p.test ? 'Видео пришло' : `+${p.prize} уже твои!`}</p>
+          <p class="label">Генерал ещё посмотрит видео. Если подход не сделан — может оспорить, и приз снимется.</p>`
+      : p.state === 'lost' ? html`<p class="warn-strong">${p.review === 'rejected' ? 'Генерал оспорил — приз снят' : 'Видео не пришло — приза нет'}.
           ${isToday ? 'Можешь прислать новое видео до конца дня.' : 'Обычные очки за день остаются.'}</p>`
       : ''}
     ${canSend || (isAdmin && (p.state === 'wait' || late)) ? html`${late ? '' : html`<p class="label">Это отдельный подход, не из плана — сделай его когда удобно.</p>`}
@@ -290,7 +291,7 @@ function pariCard(p, isToday, isAdmin, late = false) {
       <div class="pari-cap"><span class="news-cap">${cap}</span>
         ${isAdmin ? '' : html`<button type="button" class="ghost pari-copy" data-pari-cap="${cap}">📋 Скопировать</button>`}</div>
       <p class="label pari-copy-note" role="status"></p>
-      <p class="label">Генерал посмотрит видео и начислит ${prize}.</p>` : ''}
+      <p class="label">Как только бот получит видео — ${prize} сразу твой. Генерал потом посмотрит и может оспорить.</p>` : ''}
   </section>`;
 }
 
@@ -302,17 +303,18 @@ function seenPariNews() {
 function pariNews(late) {
   const layer = document.createElement('div');
   layer.className = 'gd-overlay pari-news';
-  const cap = late ? pariCaption(late) : '#пари Удержание рюкзака в руках';
+  const cap = late ? pariCaption(late) : 'Спор с генералом';
   layer.innerHTML = String(html`<div class="gd-sheet pari-news-sheet" role="dialog" aria-modal="true" aria-label="Новое от генерала">
     <div class="row"><span class="news-tag">📢 Новое от генерала</span>
       <button type="button" class="ghost icon gd-close" data-close aria-label="Закрыть">✕</button></div>
     <div class="pari-news-hero" aria-hidden="true">🔥</div>
-    <h2 class="gd-title">Пари — теперь просто видео с подписью</h2>
-    <p>Теперь так: подход на пари — отдельное видео, искать его в плане дня не нужно.</p>
+    <h2 class="gd-title">Спор с генералом — приз сразу</h2>
+    <p>Скинул видео на спор — очки приходят сразу, ждать генерала не надо.</p>
     <ol class="news-steps">
-      <li><span class="news-n">1</span><span>Сделал подход на пари — снял на видео.</span></li>
-      <li><span class="news-n">2</span><span>Скинул в Telegram, в тему «Видео», с подписью <span class="news-cap">${late ? cap : '#пари Название'}</span></span></li>
-      <li><span class="news-n">3</span><span>Генерал проверит и начислит приз.</span></li>
+      <li><span class="news-n">1</span><span>Сделал подход на спор — снял на видео.</span></li>
+      <li><span class="news-n">2</span><span>Скинул в Telegram, в тему «Видео», с подписью <span class="news-cap">${late ? cap : 'Спор с генералом'}</span></span></li>
+      <li><span class="news-n">3</span><span>Бот ставит 🔥 и сразу начисляет приз.</span></li>
+      <li><span class="news-n">4</span><span>Генерал потом смотрит видео. Если подход не сделан — оспорит, и приз снимется.</span></li>
     </ol>
     ${late ? html`<div class="pari-news-late">
       <p class="strong">Твоё пари за ${dayTitle(late.date)}: ${late.name} — ${pariTimes(late.reps, unitOf(late))}.</p>
@@ -320,7 +322,7 @@ function pariNews(late) {
       <div class="pari-cap"><span class="news-cap">${cap}</span>
         <button type="button" class="ghost pari-copy" data-news-cap="${cap}">📋 Скопировать</button></div>
       <p class="label pari-copy-note" role="status"></p>
-      <p class="label">Генерал проверит видео — если всё честно, приз ${late.prize} твой.</p>
+      <p class="label">Приз ${late.prize} придёт сразу, генерал потом посмотрит.</p>
     </div>` : html`<p class="label">Подпись есть в карточке 🔥 на «Сегодня» — кнопка 📋 её копирует.</p>`}
     <button type="button" class="btn" data-close>Понятно</button>
   </div>`);
