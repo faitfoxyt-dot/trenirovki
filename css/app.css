@@ -1127,3 +1127,18 @@ body.gd-lock { overflow: hidden; }
   background: var(--bad); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
 }
 .pari-news-late { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 14px; border: 1px solid var(--bad); background: rgba(255, 138, 61, .10); }
+
+/* Календарь: генерал правит подходы прошедшего дня */
+#detail > .btn { width: 100%; }
+.fix-ex { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
+.fix-set { display: grid; grid-template-columns: 32px 128px minmax(0, 1fr); align-items: center; gap: 8px; }
+.fix-in { position: relative; display: block; }
+.fix-in .input { width: 100%; padding-right: 74px; }
+.fix-unit { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 12px; color: var(--muted); pointer-events: none; }
+.fix-was { font-size: 13px; color: var(--muted); line-height: 1.35; min-width: 0; }
+.fix-was a { color: var(--accent); }
+.fix-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.fix-result { display: flex; flex-direction: column; gap: 10px; padding-bottom: 14px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+.fix-lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.fix-lines li { display: flex; justify-content: space-between; gap: 12px; }
+.fix-lines b { white-space: nowrap; }

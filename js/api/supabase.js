@@ -155,6 +155,11 @@ export const api = {
     }));
   },
 
+  // Генерал поправляет подходы прошедшего дня (миграция 0031).
+  async fixSets(athleteId, date, items, comment) {
+    return check(await sb.rpc('fix_sets', { p_athlete: athleteId, p_date: date, p_items: items, p_comment: comment ?? null }));
+  },
+
   // ── Видео из Telegram ──
   // Событие дня: до миграции 0017 функций нет — тогда события просто нет.
   async eventDay(date, athleteId) {

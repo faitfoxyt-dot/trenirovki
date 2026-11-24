@@ -731,6 +731,8 @@ function setStatus(a, date, status) {
       ...pull.map((r, i) => log(d, 1, i + 1, r)),
       ...abs.slice(0, partial ? 1 : 3).map((r, i) => log(d, 2, i + 1, r, !(j === 12 && i === 2))),
     ];
+    // Сделал не всё: к подходу 2 пресса видео пришло, а повторы друг не вписал.
+    if (partial) db.videos.push({ athlete_id: a, date: d, no: setNumber(findDay(a, d).plan, 2, 2), url: tgLink(380) });
     if (k === 19) continue; // вчера: ждёт проверки
     rows.forEach((row) => {
       if (j === 12 && row.exercise_id === 1 && row.set_no === 2) review(row, 'corrected', row.claimed - 1, 'Последний повтор без полной амплитуды');
@@ -1021,6 +1023,56 @@ export const api = {
     if (decision === 'corrected' && (confirmed === null || confirmed === undefined)) fail('Укажи подтверждённое число');
     review(l, decision, confirmed, comment);
     return clone(l);
+  },
+
+  // Генерал поправляет подходы прошедшего дня — как fix_sets в базе. items: [{exercise_id, set_no, reps}],
+  // reps = null — без изменений, 0 — подход не засчитан. Возвращает новые записи очков и баланс.
+  async fixSets(a, date, items, comment) {
+    needAdmin();
+    const t = today();
+    if (date >= t) fail('Сегодняшний день друг заполняет сам');
+    if (date < addDays(t, -30)) fail('Править можно только последние 30 дней');
+    if (!db.settings.start_date || date < db.settings.start_date) fail('До старта');
+    const d = findDay(a, date);
+    if (dayStatusOf(a, date) !== 'training' || !d?.plan) fail('В этот день нет тренировки');
+    const note = (comment || '').trim() || null;
+    const mark = seq;
+    let changed = 0;
+    items.forEach(({ exercise_id: id, set_no: n, reps }) => {
+      const ex = d.plan.find((e) => e.id === id) ?? fail('Этого упражнения нет в плане дня');
+      if (!(n >= 1 && n <= ex.sets)) fail('Лишний подход');
+      if (reps === null || reps === undefined) return;
+      if (!Number.isInteger(reps) || reps < 0 || reps > 1000) fail('Число от 0 до 1000');
+      let l = db.logs.find((x) => x.athlete_id === a && x.date === date && x.exercise_id === id && x.set_no === n);
+      if (!l && reps === 0) return;
+      if (l && l.review !== 'pending' && l.confirmed === reps) return;
+      const no = setNumber(d.plan, id, n);
+      const v = db.videos.filter((x) => x.athlete_id === a && x.date === date && x.no === no).pop();
+      if (v) db.videos = db.videos.filter((x) => !(x.athlete_id === a && x.date === date && x.no === no));
+      if (!l) {
+        l = { id: seq++, athlete_id: a, date, exercise_id: id, set_no: n, claimed: reps, has_video: Boolean(v),
+          video_url: v?.url ?? null, review: 'pending', confirmed: null, comment: null, points: null, bonus: null };
+        db.logs.push(l);
+        l.comment = note ?? 'Вписал крутой генерал';
+      } else {
+        if (l.claimed === null || l.claimed === undefined) l.claimed = reps;
+        l.comment = note ?? 'Исправил крутой генерал';
+      }
+      if (v) Object.assign(l, { has_video: true, video_url: l.video_url ?? v.url });
+      l.review = reps === 0 ? 'rejected' : reps === l.claimed ? 'accepted' : 'corrected';
+      l.confirmed = reps;
+      awardSet(l);
+      db.ledger.filter((x) => x.set_id === l.id && x.id >= mark).forEach((x) => { x.note = `✏️ Генерал: ${x.note.replace(/^Пересмотр: /, '')}`; });
+      changed += 1;
+    });
+    if (changed) {
+      // Серия следующих дней могла поменяться — пересчитать подходы, где множитель серии стал другим.
+      db.logs.filter((l) => l.athlete_id === a && l.date > date && l.date <= t && l.points != null)
+        .sort((x, y) => x.date.localeCompare(y.date) || x.id - y.id)
+        .forEach((l) => { if (streakMult(rulesFor(l.date), dayStreak(a, l.date)) !== Number(l.mult ?? 1)) awardSet(l); });
+      settle(a);
+    }
+    return { changed, ledger: clone(db.ledger.filter((x) => x.athlete_id === a && x.id >= mark)), balance: balance(a) };
   },
 
   // ── Видео из Telegram ──
